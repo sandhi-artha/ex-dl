@@ -1,0 +1,1 @@
+# MNIST with vanila PyTorch
