@@ -3,7 +3,9 @@ from model import MyDNN
 
 autoencoder_type = [
     # 'base',
-    'sparse',
+    # 'sparse',
+    # 'deep',
+    'cnn',
 ]
 
 def run():

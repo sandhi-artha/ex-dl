@@ -7,8 +7,9 @@ import numpy as np
 AUTO = tf.data.experimental.AUTOTUNE
 
 class DataLoader:
-    def __init__(self, cfg):
+    def __init__(self, cfg, AE_type):
         self.cfg = cfg
+        self.AE_type = AE_type
 
     def _read_data(self):
         """
@@ -26,12 +27,15 @@ class DataLoader:
         return train_x, test_x    
 
     def _preprocess_dataset(self, dataset):
-        """normalize and flatten to 786 vector"""
+        """normalize and reshape"""
         assert len(dataset.shape) == 3
         dataset = dataset.astype('float32') / 255.
-        dataset = dataset.reshape(
-            (len(dataset), np.prod(dataset.shape[1:]))  # (60000, 784)
-        )
+        if self.AE_type == 'cnn':
+            dataset = np.expand_dims(dataset, axis=-1)  # (60000,28,28,1)
+        else:
+            dataset = dataset.reshape(
+                (len(dataset), np.prod(dataset.shape[1:]))  # (60000,784)
+            )
         return dataset
 
     def load_data(self):
