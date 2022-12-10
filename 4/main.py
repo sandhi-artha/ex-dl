@@ -1,11 +1,11 @@
 from cfg import cfg
-from model import MyDNN
+from task import MyDNN
 
 autoencoder_type = [
     # 'base',
-    # 'sparse',
+    'sparse',
     # 'deep',
-    'cnn',
+    # 'cnn',
 ]
 
 def run():
