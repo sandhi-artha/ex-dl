@@ -24,7 +24,7 @@ class DataLoader:
             test_x, test_y = f['image'][...], f['label'][...]
         print(train_x.shape)
         print(train_x.dtype)
-        return train_x, test_x    
+        return train_x, test_x, test_y
 
     def _preprocess_dataset(self, dataset):
         """normalize and reshape"""
@@ -39,8 +39,8 @@ class DataLoader:
         return dataset
 
     def load_data(self):
-        train_x, test_x = self._read_data()
+        train_x, test_x, test_y = self._read_data()
         train_x = self._preprocess_dataset(train_x)
         test_x = self._preprocess_dataset(test_x)
-        return train_x, test_x
+        return train_x, test_x, test_y
 
