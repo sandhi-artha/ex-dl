@@ -2,7 +2,7 @@ from dataloader import DataLoader
 import matplotlib.pyplot as plt
 import numpy as np
 
-from model import shallow_AE, deep_AE, deep_convolution_AE
+from model import shallow_AE, deep_AE, deep_convolution_AE, VAE
 
 class Dict2Obj(object):
     """Turns a dictionary into a class"""
@@ -17,7 +17,7 @@ class MyDNN():
 
     def load_data(self):
         dataloader = DataLoader(self.cfg, self.AE_type)
-        self.train_x, self.test_x = dataloader.load_data()
+        self.train_x, self.test_x, self.test_y = dataloader.load_data()
     
     def check_data(self):
         img = self.train_x[0]
@@ -36,8 +36,13 @@ class MyDNN():
 
         elif self.AE_type == 'cnn':
             self.autoencoder, self.encoder, self.decoder = deep_convolution_AE()
+        
+        elif self.AE_type == 'vae':
+            self.autoencoder, self.encoder, self.decoder = VAE(
+                in_dim=784, hidden_dim=64, latent_dim=2
+            )
 
-        self.autoencoder.compile(optimizer='adam', loss='binary_crossentropy')
+    def check_model(self):
         print(self.autoencoder.summary())
 
     def train(self):
@@ -55,6 +60,12 @@ class MyDNN():
         if self.decoder is None:
             decoded_imgs = self.autoencoder.predict(self.test_x)
         else:
+            if self.AE_type == 'vae':
+                _z_mean, _z_log_sigma, _z = encoded_imgs
+                encoded_imgs = _z
+                # plot_latent_space(self.encoder, self.test_x, self.test_y)
+                plot_latent_scan(self.decoder)
+
             decoded_imgs = self.decoder.predict(encoded_imgs)
 
         n = 10  # How many digits we will display
@@ -74,3 +85,32 @@ class MyDNN():
             ax.get_xaxis().set_visible(False)
             ax.get_yaxis().set_visible(False)
         plt.show()
+
+
+def plot_latent_space(encoder, x, y):
+    _z_mean, _z_log_sigma, _z = encoder.predict(x)
+    plt.figure(figsize=(6,6))
+    plt.scatter(_z_mean[:,0], _z_mean[:,1], c=y)
+    plt.colorbar()
+    plt.show()
+
+def plot_latent_scan(decoder, n=15):
+    """Display a 2D manifold of the digits"""
+    n = 15  # figure with 15x15 digits
+    digit_size = 28
+    figure = np.zeros((digit_size * n, digit_size * n))
+    # We will sample n points within [-15, 15] standard deviations
+    grid_x = np.linspace(-15, 15, n)
+    grid_y = np.linspace(-15, 15, n)
+
+    for i, yi in enumerate(grid_x):
+        for j, xi in enumerate(grid_y):
+            z_sample = np.array([[xi, yi]])
+            x_decoded = decoder.predict(z_sample)
+            digit = x_decoded[0].reshape(digit_size, digit_size)
+            figure[i * digit_size: (i + 1) * digit_size,
+                j * digit_size: (j + 1) * digit_size] = digit
+
+    plt.figure(figsize=(10, 10))
+    plt.imshow(figure)
+    plt.show()

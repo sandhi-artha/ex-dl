@@ -3,22 +3,24 @@ from task import MyDNN
 
 autoencoder_type = [
     # 'base',
-    'sparse',
+    # 'sparse',
     # 'deep',
     # 'cnn',
+    'vae',
 ]
 
 def run():
     print('initializing..')
-    model = MyDNN(cfg, autoencoder_type[0])
+    task = MyDNN(cfg, autoencoder_type[0])
     print('loading data..')
-    model.load_data()
-    model.check_data()
+    task.load_data()
+    task.check_data()
     print('creating model..')
-    model.load_model()
+    task.load_model()
+    # task.check_model()
     print('starting training..')
-    model.train()
-    model.visualize()
+    task.train()
+    task.visualize()
 
 if __name__ == '__main__':
     run()
