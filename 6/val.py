@@ -11,10 +11,10 @@ def eval_coco(cfg):
     print(f'reults:  total imgs: {len(coco_dt.imgs)}, anns: {len(coco_dt.anns)}')
     
     # evaluate only the first 100 ids
-    img_ids = sorted(coco_gt.getImgIds())
+    # img_ids = sorted(coco_gt.getImgIds())
 
     coco_eval = COCOeval(coco_gt, coco_dt, 'segm')
-    coco_eval.params.imgIds = img_ids
+    # coco_eval.params.imgIds = img_ids
     coco_eval.evaluate()
     coco_eval.accumulate()
     coco_eval.summarize()

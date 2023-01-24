@@ -37,7 +37,7 @@ def main(cfg):
 
     results = []
     # make prediction
-    for i in tqdm(range(100)):
+    for i in tqdm(range(len(val_ds))):
         image, target = val_ds[i]
         pred = model([image.cuda()])[0]
 
