@@ -41,6 +41,30 @@ def get_ann_dict(coco, img_id, anns, height, width):
     }
     return target
 
+def get_ann_empty_dict(img_id, height, width):
+    """https://www.mdpi.com/2072-4292/14/16/3979#:~:text=Annotations%20with%20Dummy%20Category"""
+    # randomize location of dummy box
+    rand_x = np.random.randint(0, height)
+    rand_y = np.random.randint(0, width)
+    boxes = [[rand_x, rand_y, rand_x + 1, rand_y + 1]]  # dummy box of 1x1 px
+    labels = [0]  # using 0 as the dummy category
+    
+    # creating dummy mask
+    masks = np.zeros((1,height,width), dtype=np.uint8)
+    masks[0, rand_x, rand_y] = 1
+    
+    areas = [1.0]
+    iscrowds = [0]
+    target = {
+        'boxes': torch.as_tensor(boxes, dtype=torch.float32),
+        'labels': torch.as_tensor(labels, dtype=torch.int64),
+        'masks': torch.as_tensor(masks, dtype=torch.uint8),
+        'image_id': torch.tensor([img_id]),
+        'area': torch.as_tensor(areas, dtype=torch.float32),
+        'iscrowd': torch.as_tensor(iscrowds, dtype=torch.uint8)
+    }
+    return target
+
 
 class CocoDS(Dataset):
     def __init__(self, cfg, coco_path, transforms=None):
@@ -66,8 +90,12 @@ class CocoDS(Dataset):
         anns = self.coco.loadAnns(anns_id)
 
         image = get_image(self.cfg, image_info['file_name'])  # return PIL image
-        target = get_ann_dict(self.coco, image_id, anns, h, w)
-        
+
+        if len(anns_id)==0:
+            target = get_ann_empty_dict(image_id, h, w)
+        else:
+            target = get_ann_dict(self.coco, image_id, anns, h, w)
+
         if self.transforms is not None:
             image, target = self.transforms(image, target)
         
