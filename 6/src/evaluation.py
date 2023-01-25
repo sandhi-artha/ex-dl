@@ -12,7 +12,7 @@ def get_rle_mask(mask, mask_thresh):
     rle_mask['counts'] = rle_mask['counts'].decode('utf-8')  # decode the bytes string format
     return rle_mask
 
-def encode_pred(pred, image_id, cfg):
+def encode_pred(pred, image_id, mask_thresh):
     """encode preds of an image
     return: a list of dicts
     """
@@ -30,7 +30,7 @@ def encode_pred(pred, image_id, cfg):
             'bbox': boxes[n],
             'score' : scores[n],
             'category_id': labels[n],  # if it's 0, remove this pred_obj
-            'segmentation': get_rle_mask(masks[n], cfg.mask_thresh)
+            'segmentation': get_rle_mask(masks[n], mask_thresh)
         }
         image_results.append(result)
 

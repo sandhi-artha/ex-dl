@@ -18,10 +18,10 @@ def convert_bbox(bbox):
 
 def get_ann_dict(coco, img_id, anns, height, width):
     """MaskRCNN requires `bbox` in [x1,y1,x2,y2] and also `masks` in array format"""
-    c = len(anns)
+    N = len(anns)
     boxes = []
     labels = []
-    masks = np.zeros((c, height, width), np.uint8)
+    masks = np.zeros((N, height, width), np.uint8)
     areas = []
     iscrowds = []
     for i,ann in enumerate(anns):
@@ -43,9 +43,9 @@ def get_ann_dict(coco, img_id, anns, height, width):
 
 
 class CocoDS(Dataset):
-    def __init__(self, cfg, transforms=None):
+    def __init__(self, cfg, coco_path, transforms=None):
         self.cfg = cfg
-        self.coco = COCO(cfg.label_fp)
+        self.coco = COCO(coco_path)
         self.transforms = transforms
         self.image_ids = self.coco.getImgIds()
 
@@ -69,7 +69,7 @@ class CocoDS(Dataset):
         target = get_ann_dict(self.coco, image_id, anns, h, w)
         
         if self.transforms is not None:
-            image = self.transforms(image)
+            image, target = self.transforms(image, target)
         
         return image, target
 
