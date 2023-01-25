@@ -21,6 +21,8 @@ class Resize:
         self.image_resize = image_resize
 
     def __call__(self, image, target):
+        assert len(image.shape)==3, f'image shape: {image.shape}'
+        assert len(target['masks'].shape)==3, f'mask shape: {target["masks"].shape}'
         image = F.resize(image, self.image_resize, T.InterpolationMode.NEAREST)
         target['masks'] = F.resize(target['masks'], self.image_resize, T.InterpolationMode.NEAREST)
         return image, target
