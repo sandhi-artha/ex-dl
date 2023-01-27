@@ -13,7 +13,9 @@ class FineTuneCoco:
         self.val_dl = val_dl
         self.device = device
         self.loss_fn = torch.nn.CrossEntropyLoss()
-        self.optimizer = torch.optim.SGD(model.parameters(), lr=cfg.lr)
+
+        params = [p for p in self.model.parameters() if p.requires_grad]
+        self.optimizer = torch.optim.SGD(params, lr=cfg.lr)
 
     def train_loop(self, epoch):
         n_batches=len(self.train_dl)
