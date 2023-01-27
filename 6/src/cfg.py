@@ -13,3 +13,4 @@ class cfg:
     image_resize = [480, 480]
     bs = 2
     lr = 1e-3
+    epochs = 2

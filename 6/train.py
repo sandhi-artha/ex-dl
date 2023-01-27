@@ -38,7 +38,7 @@ def main(cfg):
     model = load_model()
 
     ft_task = FineTuneCoco(cfg, model, train_dl, val_dl, device)
-    ft_task.train(epochs=2)
+    ft_task.train(epochs=cfg.epochs)
 
 
 if __name__=='__main__':
