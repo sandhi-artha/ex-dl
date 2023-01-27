@@ -14,22 +14,22 @@ from src.task import FineTuneCoco
 
 def main(cfg):
     # load dataset
-    label_fp = 'train.json'
-    val_label_fp = 'val.json'
+    # label_fp = 'train.json'
+    # val_label_fp = 'val.json'
 
     transforms = get_transform(cfg.image_resize)
-    train_ds = CocoDS(cfg, label_fp, transforms)
-    val_ds = CocoDS(cfg, val_label_fp, transforms)
+    train_ds = CocoDS(cfg, cfg.label_fp, transforms)
+    val_ds = CocoDS(cfg, cfg.val_label_fp, transforms)
 
     train_dl = DataLoader(
         train_ds, batch_size=cfg.bs, shuffle=True,
-        # num_workers=2,
+        num_workers=2,
         collate_fn=lambda x: tuple(zip(*x))
     )
     
     val_dl = DataLoader(
         val_ds, batch_size=cfg.bs,
-        # num_workers=2,
+        num_workers=2,
         collate_fn=lambda x: tuple(zip(*x))
     )
 
