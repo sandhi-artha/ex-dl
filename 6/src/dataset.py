@@ -37,7 +37,9 @@ def get_ann_dict(coco, img_id, anns, height, width):
         'masks': torch.as_tensor(masks, dtype=torch.uint8),
         'image_id': torch.tensor([img_id]),
         'area': torch.as_tensor(areas, dtype=torch.float32),
-        'iscrowd': torch.as_tensor(iscrowds, dtype=torch.uint8)
+        'iscrowd': torch.as_tensor(iscrowds, dtype=torch.uint8),
+        'height': torch.as_tensor(height, dtype=torch.int64),
+        'width': torch.as_tensor(width, dtype=torch.int64)
     }
     return target
 
@@ -61,7 +63,9 @@ def get_ann_empty_dict(img_id, height, width):
         'masks': torch.as_tensor(masks, dtype=torch.uint8),
         'image_id': torch.tensor([img_id]),
         'area': torch.as_tensor(areas, dtype=torch.float32),
-        'iscrowd': torch.as_tensor(iscrowds, dtype=torch.uint8)
+        'iscrowd': torch.as_tensor(iscrowds, dtype=torch.uint8),
+        'height': torch.as_tensor(height, dtype=torch.int64),
+        'width': torch.as_tensor(width, dtype=torch.int64)
     }
     return target
 

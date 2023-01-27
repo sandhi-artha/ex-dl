@@ -3,6 +3,13 @@ import os
 import numpy as np
 from pycocotools import mask as COCOmask
 
+import torchvision.transforms as T
+import torchvision.transforms.functional as F
+
+def resize_mask(mask, image_resize):
+    mask = F.resize(mask, image_resize, T.InterpolationMode.NEAREST)
+    return mask.numpy()
+
 def get_rle_mask(mask, mask_thresh):
     """binarize mask, encode to RLE {'size':[w,h],'counts':str}"""
     assert mask.shape[0] == 1, f'got input rle mask shape: {mask.shape}'
@@ -12,7 +19,7 @@ def get_rle_mask(mask, mask_thresh):
     rle_mask['counts'] = rle_mask['counts'].decode('utf-8')  # decode the bytes string format
     return rle_mask
 
-def encode_pred(pred, image_id, mask_thresh):
+def encode_pred(pred, image_id, mask_thresh, ori_size):
     """encode preds of an image
     return: a list of dicts
     """
@@ -22,7 +29,8 @@ def encode_pred(pred, image_id, mask_thresh):
     boxes = pred['boxes'].tolist()
     labels = pred['labels'].tolist()
     scores = pred['scores'].tolist()
-    masks = pred['masks'].detach().cpu().numpy()
+    masks = pred['masks'].detach().cpu()
+    masks = resize_mask(masks, ori_size)
 
     for n in range(len(labels)):
         result = {

@@ -65,12 +65,23 @@ class FineTuneCoco:
 
             # move data to device
             images = list(image.to(self.device) for image in images)
-            image_ids = [target['image_id'].item() for target in targets]
+            # grab necessary ann to create submision
+            image_ids = []
+            heights = []
+            widths = []
+            for target in targets:
+                image_ids.append(target['image_id'].item())
+                heights.append(target['height'].item())
+                widths.append(target['width'].item())
+            # make prediction
             preds = self.model(images)
 
             # go through the batch
             for i in range(len(image_ids)):
-                image_results = encode_pred(preds[i], image_ids[i], self.cfg.mask_thresh)
+                ori_size = [heights[i], widths[i]]
+                image_results = encode_pred(
+                    preds[i], image_ids[i], self.cfg.mask_thresh, ori_size
+                )
                 for result in image_results:
                     results.append(result)
 
