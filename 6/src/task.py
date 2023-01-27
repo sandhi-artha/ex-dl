@@ -55,7 +55,7 @@ class FineTuneCoco:
         elapsed = time.time() - time_start
 
         # save model
-        self.save_model(epoch)
+        if self.cfg.save_model: self.save_model(epoch)
         print(f"ep: {epoch:2d} Train mask-only loss: {train_loss_mask:7.3f}")
         print(f"ep: {epoch:2d} Train loss: {train_loss:7.3f}. [{elapsed:.0f} secs]")
 
