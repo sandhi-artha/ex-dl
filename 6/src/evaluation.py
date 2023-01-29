@@ -54,7 +54,7 @@ def save_results(results, results_dir):
     with open(save_fp, 'w') as f:
         json.dump(results, f)
 
-def evaluate_coco(coco_gt, results_fp):
+def evaluate_coco(coco_gt, coco_dt):
     def _summarize(eval_dict, params, ap=1, iouThr=None, areaRng='all', maxDets=100 ):
         p = params
         aind = [i for i, aRng in enumerate(p.areaRngLbl) if aRng == areaRng]
@@ -82,7 +82,6 @@ def evaluate_coco(coco_gt, results_fp):
         return mean_s
 
     # evaluate with cocoEval
-    coco_dt = coco_gt.loadRes(results_fp)
     coco_eval = COCOeval(coco_gt, coco_dt, 'segm')
 
     # limits evaluation on image_ids avail in val_ds

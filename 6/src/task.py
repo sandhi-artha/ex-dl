@@ -3,7 +3,7 @@ import time
 import torch
 from tqdm import tqdm
 from src.evaluation import encode_pred, evaluate_coco
-from src.viz import plot_metrics
+from src.viz import plot_metrics, view_pred_gt
 
 class FineTuneCoco:
     def __init__(self, cfg, model, train_dl, val_dl, device):
@@ -99,7 +99,13 @@ class FineTuneCoco:
         # output results.json
         results_fp = self.save_coco_res(results, epoch)
 
-        mAP50 = evaluate_coco(coco_gt=self.val_dl.dataset.coco, results_fp=results_fp)
+        coco_gt = self.val_dl.dataset.coco
+        coco_dt = coco_gt.loadRes(results_fp)
+        mAP50 = evaluate_coco(coco_gt, coco_dt)
+
+        sample_image_ids = self.val_dl.dataset.image_ids[5:10]
+        for image_id in sample_image_ids:
+            view_pred_gt(coco_gt, coco_dt, image_id, self.cfg.data_dir, self.cfg.save_dir, epoch, save=True)
         return mAP50
 
     def train(self, epochs):
