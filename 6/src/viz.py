@@ -1,4 +1,6 @@
 import random
+import json
+import os
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -39,3 +41,25 @@ def viz_pred(img_path, conf_masks):
     plt.figure(figsize=(10,8))
     plt.imshow(img)
     plt.show()
+
+def plot_metrics(logs, save_dir=None):
+	if save_dir is not None:
+		if not os.path.exists(save_dir):
+			os.makedirs(save_dir)
+		save_fp = os.path.join(save_dir, 'logs.json')
+		with open(save_fp, 'w') as f:
+			json.dump(logs, f)
+
+	n_plots = len(logs.keys())
+	f, ax = plt.subplots(n_plots, 1, figsize=(12, 3*n_plots))
+
+	for n, metric in enumerate(logs.keys()):
+		ax[n].plot(logs[metric])
+		ax[n].set_ylabel(metric)
+		ax[n].grid(True, axis='y')
+		if metric=='mAP50':
+			ax[n].axvline(np.argmax(logs[metric]), linestyle='dashed')
+		else:
+			ax[n].axvline(np.argmin(logs[metric]), linestyle='dashed')
+
+	plt.show()

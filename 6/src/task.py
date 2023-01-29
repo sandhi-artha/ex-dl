@@ -2,8 +2,8 @@ import json, os
 import time
 import torch
 from tqdm import tqdm
-from src.evaluation import encode_pred
-from pycocotools.cocoeval import COCOeval
+from src.evaluation import encode_pred, evaluate_coco
+from src.viz import plot_metrics
 
 class FineTuneCoco:
     def __init__(self, cfg, model, train_dl, val_dl, device):
@@ -20,8 +20,16 @@ class FineTuneCoco:
     def train_loop(self, epoch):
         n_batches=len(self.train_dl)
         time_start=time.time()
-        loss_accum = 0.0
-        loss_mask_accum = 0.0
+        
+        # log the losses
+        accum = {
+            'loss': 0.0,
+            'loss_mask': 0.0,
+            'loss_box_reg': 0.0,
+            'loss_classifier': 0.0,
+            'loss_objectness': 0.0,
+            'loss_rpn_box_reg': 0.0,
+        }
 
         self.model.train();
         for batch_idx, (images, targets) in enumerate(self.train_dl,1):
@@ -32,32 +40,33 @@ class FineTuneCoco:
 
             # get loss dict (train mode)
             loss_dict = self.model(images, targets)
+            for key in loss_dict.keys():
+                accum[key] += loss_dict[key].item()     # accumulate losses
+
             # take all the 5 types of loss and sum it
             loss = sum(loss for loss in loss_dict.values())
+            accum['loss'] += loss.item()    # accumulate sum of losses
 
             # Backpropagation
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
 
-            # computing losses
-            loss_mask = loss_dict['loss_mask'].item()
-            loss_accum += loss.item()
-            loss_mask_accum += loss_mask
-
             # print every 100 batch for info
             if batch_idx % 10 == 0:
-                print(f"[Batch {batch_idx:3d} / {n_batches:3d}] Batch train loss: {loss.item():7.3f}. Mask-only loss: {loss_mask:7.3f}")
+                print(f"[Batch {batch_idx:3d} / {n_batches:3d}] Batch train loss: {loss.item():7.3f}. Mask-only loss: {loss_dict['loss_mask'].item():7.3f}")
         
         # Train losses
-        train_loss = loss_accum / n_batches
-        train_loss_mask = loss_mask_accum / n_batches
+        for k in accum.keys():
+            accum[k] = accum[k] / n_batches     # average for epoch
         elapsed = time.time() - time_start
 
         # save model
         if self.cfg.save_model: self.save_model(epoch)
-        print(f"ep: {epoch:2d} Train mask-only loss: {train_loss_mask:7.3f}")
-        print(f"ep: {epoch:2d} Train loss: {train_loss:7.3f}. [{elapsed:.0f} secs]")
+        print(f"ep: {epoch:2d} Train mask-only loss: {accum['loss_mask']:7.3f}")
+        print(f"ep: {epoch:2d} Train loss: {accum['loss']:7.3f}. [{elapsed:.0f} secs]")
+
+        return accum
 
     def test_loop(self, epoch):
         results = []
@@ -90,27 +99,32 @@ class FineTuneCoco:
         # output results.json
         results_fp = self.save_coco_res(results, epoch)
 
-        # evaluate with cocoEval
-        coco_gt = self.val_dl.dataset.coco
-        coco_dt = coco_gt.loadRes(results_fp)
-        coco_eval = COCOeval(coco_gt, coco_dt, 'segm')
-
-        # limits evaluation on image_ids avail in val_ds
-        coco_eval.params.imgIds = self.val_dl.dataset.image_ids
-        coco_eval.evaluate()
-        coco_eval.accumulate()
-        coco_eval.summarize()
+        mAP50 = evaluate_coco(coco_gt=self.val_dl.dataset.coco, results_fp=results_fp)
+        return mAP50
 
     def train(self, epochs):
+        logs = {
+            'loss': [],
+            'loss_mask': [],
+            'loss_box_reg': [],
+            'loss_classifier': [],
+            'loss_objectness': [],
+            'loss_rpn_box_reg': [],
+            'mAP50': [],
+        }
+
         for epoch in tqdm(range(epochs)):
             print(f"Starting epoch {epoch} of {epochs}")
-            self.train_loop(epoch)
+            epoch_losses = self.train_loop(epoch)
+            for k in epoch_losses.keys():
+                logs[k].append(epoch_losses[k])
+            
             print(f"Evaluating.........\n")
-            self.test_loop(epoch)
+            epoch_mAP = self.test_loop(epoch)
+            logs['mAP50'].append(epoch_mAP)
+        
+        plot_metrics(logs, self.cfg.save_dir)
 
-    def test(self):
-        """test on all of data using cocoeval"""
-        return 0
 
     def save_model(self, epoch):
         model_save_dir = os.path.join(self.cfg.save_dir, 'saved_models')

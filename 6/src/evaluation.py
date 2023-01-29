@@ -2,6 +2,8 @@ import json
 import os
 import numpy as np
 from pycocotools import mask as COCOmask
+from pycocotools.cocoeval import COCOeval
+
 
 import torchvision.transforms as T
 import torchvision.transforms.functional as F
@@ -51,3 +53,42 @@ def save_results(results, results_dir):
     save_fp = os.path.join(results_dir, 'results.json')
     with open(save_fp, 'w') as f:
         json.dump(results, f)
+
+def evaluate_coco(coco_gt, results_fp):
+    def _summarize(eval_dict, params, ap=1, iouThr=None, areaRng='all', maxDets=100 ):
+        p = params
+        aind = [i for i, aRng in enumerate(p.areaRngLbl) if aRng == areaRng]
+        mind = [i for i, mDet in enumerate(p.maxDets) if mDet == maxDets]
+        if ap == 1:
+            # dimension of precision: [TxRxKxAxM]
+            s = eval_dict['precision']
+            # IoU
+            if iouThr is not None:
+                t = np.where(iouThr == p.iouThrs)[0]
+                s = s[t]
+            s = s[:,:,:,aind,mind]
+        else:
+            # dimension of recall: [TxKxAxM]
+            s = eval_dict['recall']
+            if iouThr is not None:
+                t = np.where(iouThr == p.iouThrs)[0]
+                s = s[t]
+            s = s[:,:,aind,mind]
+        if len(s[s>-1])==0:
+            mean_s = -1
+        else:
+            mean_s = np.mean(s[s>-1])
+        # print(iStr.format(titleStr, typeStr, iouStr, areaRng, maxDets, mean_s))
+        return mean_s
+
+    # evaluate with cocoEval
+    coco_dt = coco_gt.loadRes(results_fp)
+    coco_eval = COCOeval(coco_gt, coco_dt, 'segm')
+
+    # limits evaluation on image_ids avail in val_ds
+    # coco_eval.params.imgIds = self.val_dl.dataset.image_ids
+    coco_eval.evaluate()
+    coco_eval.accumulate()
+    # coco_eval.summarize()
+    mAP50 = _summarize(coco_eval.eval, coco_eval.params, ap=1, iouThr=.5)
+    return mAP50
