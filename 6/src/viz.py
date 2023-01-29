@@ -65,6 +65,7 @@ def plot_metrics(logs, save_dir=None):
     plt.show()
 
 def view_pred_gt(coco_gt, coco_dt, image_id, data_dir, save_dir, epoch, save=True):
+    # TODO: replace plt.savefig with cv.imwrite or something, bcz it's +2s per figure save
     gt_ann_ids = coco_gt.getAnnIds(image_id)
     gt_anns = coco_gt.loadAnns(gt_ann_ids)
 
