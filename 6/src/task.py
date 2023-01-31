@@ -104,9 +104,10 @@ class FineTuneCoco:
         mAP50 = evaluate_coco(coco_gt, coco_dt)
 
         if self.cfg.save_figure:
-            sample_image_ids = self.val_dl.dataset.image_ids[5:10]
-            for image_id in sample_image_ids:
-                view_pred_gt(coco_gt, coco_dt, image_id, self.cfg.data_dir, self.cfg.save_dir, epoch, save=True)
+            if epoch % 4 == 0:  # save pred results every 4 epochs
+                sample_image_ids = self.val_dl.dataset.image_ids[5:10]
+                for image_id in sample_image_ids:
+                    view_pred_gt(coco_gt, coco_dt, image_id, self.cfg.data_dir, self.cfg.save_dir, epoch, save=True)
         return mAP50
 
     def train(self, epochs):

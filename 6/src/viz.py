@@ -94,7 +94,7 @@ def view_pred_gt(coco_gt, coco_dt, image_id, data_dir, save_dir, epoch, save=Tru
             os.mkdir(fig_save_dir)
 
         save_fp = os.path.join(fig_save_dir, f'{image_id}_ep{epoch:2d}.png')
-        plt.savefig(save_fp)
+        plt.savefig(save_fp, bbox_inches='tight')
         plt.close(f)
     else:
         plt.show()
