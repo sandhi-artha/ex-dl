@@ -1,5 +1,7 @@
 import torch
 from time import time
+import copy
+import os
 import wandb
 
 class FineTuneCifar:
@@ -49,14 +51,14 @@ class FineTuneCifar:
             # print every 100 batches
             if batch_idx%100 == 0:
                 print(f"[Batch {batch_idx:3d} / {n_batches:3d}] Batch loss: {loss.item():7.3f} Batch acc: {corrects/images.shape[0]:7.3f}")
-
+                break
         # config lr
         self.scheduler.step()
         last_lr = self.scheduler.get_last_lr()[0]
 
         # get epoch summary
-        accum_loss = accum_loss / len(self.val_dl.dataset)     # batch accum loss, so divide by num of batches
-        accum_acc = accum_acc / len(self.val_dl.dataset)    # sum of correct preds, so divide by num of samples
+        accum_loss = accum_loss / len(self.train_dl.dataset)     # batch accum loss, so divide by num of batches
+        accum_acc = accum_acc / len(self.train_dl.dataset)    # sum of correct preds, so divide by num of samples
         elapsed = time() - time_start
 
         # save model
@@ -88,6 +90,7 @@ class FineTuneCifar:
                 # log metrics
                 accum_loss += loss.item()*images.shape[0]
                 accum_acc += torch.sum(preds==labels).item()
+                break
 
         # get epoch summary
         accum_loss = accum_loss / len(self.val_dl.dataset)
@@ -100,6 +103,7 @@ class FineTuneCifar:
     def train(self, epochs):
         if self.cfg.is_wandb:
             wandb.watch(self.model, log_freq=100)
+
         logs = {
             'lr'        : [],
             'loss'      : [],
@@ -108,9 +112,14 @@ class FineTuneCifar:
             'val_acc'   : []
         }
 
+        # best_model_wts = copy.deepcopy(self.model.state_dict())
+        best_epoch_acc = 0
+
         for epoch in range(epochs):
             lr, train_loss, train_acc = self.train_loop(epoch)
             val_loss, val_acc = self.val_loop(epoch)
+
+            # log metrics
             logs['lr'].append(lr)
             logs['loss'].append(train_loss)
             logs['acc'].append(train_acc)
@@ -123,8 +132,23 @@ class FineTuneCifar:
                 wandb.log({'acc': train_acc})
                 wandb.log({'val_loss': val_loss})
                 wandb.log({'val_acc': val_acc})
-        
-        self.run.finish()
+
+            # print(f'best epoch acc: {best_epoch_acc}')
+            if self.cfg.save_model:
+                if val_acc >= best_epoch_acc:
+                    print(f'Validation Acc Improved ({best_epoch_acc} ---> {val_acc})')
+                    best_epoch_acc = val_acc
+                    # best_model_wts = copy.deepcopy(self.model.state_dict())
+
+                    # Save a model file from the current directory
+                    model_save_fp = self.save_model(epoch)
+                    if self.cfg.is_wandb:
+                        self.run.summary['Best Accuracy'] = best_epoch_acc
+                        wandb.save(model_save_fp)
+
+                    print(f'Model Saved')
+
+        if self.cfg.is_wandb: self.run.finish()
         return logs
 
     def init_optimizer(self, cfg):
@@ -152,6 +176,15 @@ class FineTuneCifar:
                 self.optimizer,
                 T_max = cfg.epochs, # Maximum number of iterations.
                 eta_min = eta_min)  # Minimum learning rate.
+    
+    def save_model(self, epoch):
+        model_save_dir = os.path.join(self.cfg.save_dir, 'saved_models')
+
+        if not os.path.isdir(model_save_dir):
+            os.makedirs(model_save_dir)
+        save_fp = os.path.join(model_save_dir, f'pt-e{epoch}.bin')
+        torch.save(self.model.state_dict(), save_fp)
+        return save_fp
 
 def dict_from_class(cls):
     return dict((key, value)

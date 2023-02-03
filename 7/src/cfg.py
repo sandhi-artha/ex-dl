@@ -9,9 +9,9 @@ class cfg:
     use_pretrained = True
 
     # training
-    is_wandb = True
+    is_wandb = False
     bs = 128
     lr = 1e-3
     epochs = 3
-    save_model = False
+    save_model = True
     save_figure = False
