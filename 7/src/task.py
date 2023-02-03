@@ -18,13 +18,14 @@ class FineTuneCifar:
         self.model.train();
         time_start = time()
         for batch_idx, (images, labels) in enumerate(self.train_dl, 1):
+            # forward pass
             logits = self.model(images)
             loss = self.loss_fn(logits, labels)
 
             # log metrics
             accum_loss += loss.item()
 
-            # backprop, gradient step
+            # zero param gradients, backprop, gradient step
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
@@ -32,7 +33,7 @@ class FineTuneCifar:
             # print every 100 batches
             if batch_idx%100 == 0:
                 print(f"[Batch {batch_idx:3d} / {n_batches:3d}] Batch train loss: {loss.item():7.3f}")
-        
+                break
         # get epoch summary
         accum_loss = accum_loss / n_batches
         elapsed = time() - time_start
@@ -47,10 +48,11 @@ class FineTuneCifar:
         time_start = time()
         self.model.eval();
         accum_loss = 0
-        for batch_idx, (images, labels) in enumerate(self.val_dl, 1):
-            logits = self.model(images)
-            loss = self.loss_fn(logits, labels)
-            accum_loss += loss.item()
+        with torch.no_grad():
+            for batch_idx, (images, labels) in enumerate(self.val_dl, 1):
+                logits = self.model(images)
+                loss = self.loss_fn(logits, labels)
+                accum_loss += loss.item()
         
         accum_loss = accum_loss / batch_idx
         elapsed = time() - time_start
