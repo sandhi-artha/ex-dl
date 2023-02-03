@@ -9,7 +9,8 @@ class cfg:
     use_pretrained = True
 
     # training
-    bs = 32
+    is_wandb = True
+    bs = 128
     lr = 1e-3
     epochs = 3
     save_model = False

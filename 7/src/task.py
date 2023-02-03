@@ -1,5 +1,6 @@
 import torch
 from time import time
+import wandb
 
 class FineTuneCifar:
     def __init__(self, cfg, model, train_dl, val_dl, device):
@@ -10,6 +11,11 @@ class FineTuneCifar:
         self.device = device
         self.loss_fn = torch.nn.CrossEntropyLoss()
         self.init_optimizer(cfg)
+        if self.cfg.is_wandb:
+            self.run = wandb.init(
+                project='ex-dl7', 
+                config=dict_from_class(cfg),
+                entity='s_wangiyana')
 
     def train_loop(self, epoch):
         accum_loss = 0
@@ -92,6 +98,8 @@ class FineTuneCifar:
         return accum_loss, accum_acc
 
     def train(self, epochs):
+        if self.cfg.is_wandb:
+            wandb.watch(self.model, log_freq=100)
         logs = {
             'lr'        : [],
             'loss'      : [],
@@ -108,7 +116,15 @@ class FineTuneCifar:
             logs['acc'].append(train_acc)
             logs['val_loss'].append(val_loss)
             logs['val_acc'].append(val_acc)
+
+            if self.cfg.is_wandb:
+                wandb.log({'lr': lr})
+                wandb.log({'loss': train_loss})
+                wandb.log({'acc': train_acc})
+                wandb.log({'val_loss': val_loss})
+                wandb.log({'val_acc': val_acc})
         
+        self.run.finish()
         return logs
 
     def init_optimizer(self, cfg):
@@ -136,4 +152,9 @@ class FineTuneCifar:
                 self.optimizer,
                 T_max = cfg.epochs, # Maximum number of iterations.
                 eta_min = eta_min)  # Minimum learning rate.
-        
+
+def dict_from_class(cls):
+    return dict((key, value)
+        for (key, value) in cls.__dict__.items()
+        if not key.startswith('__')
+    )
