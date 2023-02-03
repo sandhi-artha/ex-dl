@@ -51,7 +51,7 @@ class FineTuneCifar:
             # print every 100 batches
             if batch_idx%100 == 0:
                 print(f"[Batch {batch_idx:3d} / {n_batches:3d}] Batch loss: {loss.item():7.3f} Batch acc: {corrects/images.shape[0]:7.3f}")
-                break
+                
         # config lr
         self.scheduler.step()
         last_lr = self.scheduler.get_last_lr()[0]
@@ -90,7 +90,7 @@ class FineTuneCifar:
                 # log metrics
                 accum_loss += loss.item()*images.shape[0]
                 accum_acc += torch.sum(preds==labels).item()
-                break
+                
 
         # get epoch summary
         accum_loss = accum_loss / len(self.val_dl.dataset)
