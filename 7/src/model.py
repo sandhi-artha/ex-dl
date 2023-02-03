@@ -25,14 +25,14 @@ class SimpleNet(nn.Module):
         return x
 
 def load_densenet(num_classes=10, train_only_task_head=True, use_pretrained=True):
-    # # for new torch, use this
+    # # for new torchvision >0.13, use this
     # if use_pretrained:
     #     weights = models.DenseNet121_Weights.DEFAULT
     # else:
     #     weights = None
     # model = models.densenet121(weights=weights)
     
-    # for old torch ver
+    # for old torchvision ver
     model = models.densenet121(pretrained=use_pretrained)
 
     if train_only_task_head:
