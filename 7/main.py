@@ -8,6 +8,7 @@ from src.dataset import CifarDS
 from src.transforms import get_transform
 from src.model import load_model
 from src.task import FineTuneCifar
+from src.viz import plot_metrics
 
 
 
@@ -31,7 +32,8 @@ def main(cfg):
     model = load_model(cfg)
 
     ft_task = FineTuneCifar(cfg, model, train_dl, test_dl, device)
-    ft_task.train(epochs=cfg.epochs)
+    logs = ft_task.train(epochs=cfg.epochs)
+    plot_metrics(logs)
 
 if __name__=='__main__':
     main(cfg)
