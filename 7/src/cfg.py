@@ -2,13 +2,14 @@ class cfg:
     data_dir = '../data/cifar10'
     save_dir = 'result/proto/'  # will have: results, saved_models, figures
     
-    # eval
-    score_thresh = 0.7
-    mask_thresh = 0.5
+    # model
+    num_classes = 10
+    train_only_task_head = True
+    use_pretrained = True
 
     # training
     bs = 16
     lr = 1e-3
-    epochs = 2
+    epochs = 3
     save_model = False
     save_figure = False

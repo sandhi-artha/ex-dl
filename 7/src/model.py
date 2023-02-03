@@ -24,14 +24,33 @@ class SimpleNet(nn.Module):
         x = self.fc3(x)
         return x
 
-
-def load_model(num_classes=10, fine_tune=True, use_pretrained=True):
+def load_densenet(num_classes=10, train_only_task_head=True, use_pretrained=True):
+    # # for new torch, use this
+    # if use_pretrained:
+    #     weights = models.DenseNet121_Weights.DEFAULT
+    # else:
+    #     weights = None
+    # model = models.densenet121(weights=weights)
+    
+    # for old torch ver
     model = models.densenet121(pretrained=use_pretrained)
-    if not fine_tune:
-        # train all parameters
-        for param in model.parameters(): param.requires_grad=False
 
+    if train_only_task_head:
+        for param in model.parameters():    # freeze other layers
+            param.requires_grad=False
+
+    # replace the task head
     num_ftrs = model.classifier.in_features
     model.classifier = nn.Linear(num_ftrs, num_classes)  # replace the classifier
-    # input_size = 224
+    return model
+
+
+def load_model(cfg):
+    if cfg.model=='cnn':
+        model = SimpleNet(cfg.num_classes)
+    elif cfg.model=='densenet':
+        model = load_densenet(cfg.num_classes, cfg.train_only_task_head, cfg.use_pretrained)
+    else:
+        raise ValueError(f'unrecognized model string: {cfg.model}. use "cnn" or "densenet"')
+    
     return model
