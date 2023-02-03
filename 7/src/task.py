@@ -33,7 +33,7 @@ class FineTuneCifar:
             corrects = torch.sum(preds==labels).item()
 
             # log metrics
-            accum_loss += loss.item()
+            accum_loss += loss.item()*images.shape[0]
             accum_acc += corrects
 
             # zero param gradients, backprop, gradient step
@@ -43,10 +43,10 @@ class FineTuneCifar:
 
             # print every 100 batches
             if batch_idx%100 == 0:
-                print(f"[Batch {batch_idx:3d} / {n_batches:3d}] Batch loss: {loss.item():7.3f} Batch acc: {corrects/self.cfg.bs:7.3f}")
+                print(f"[Batch {batch_idx:3d} / {n_batches:3d}] Batch loss: {loss.item():7.3f} Batch acc: {corrects/images.shape[0]:7.3f}")
                 
         # get epoch summary (this will return slightly less if the last batch is not full. error is greater if bs is large)
-        accum_loss = accum_loss / n_batches     # batch accum loss, so divide by num of batches
+        accum_loss = accum_loss / len(self.val_dl.dataset)     # batch accum loss, so divide by num of batches
         accum_acc = accum_acc / len(self.val_dl.dataset)    # sum of correct preds, so divide by num of samples
         elapsed = time() - time_start
 
@@ -77,11 +77,11 @@ class FineTuneCifar:
                 _, preds = torch.max(logits,1)   # returns (values, indices)
 
                 # log metrics
-                accum_loss += loss.item()
+                accum_loss += loss.item()*images.shape[0]
                 accum_acc += torch.sum(preds==labels).item()
 
         # get epoch summary
-        accum_loss = accum_loss / n_batches
+        accum_loss = accum_loss / len(self.val_dl.dataset)
         accum_acc = accum_acc / len(self.val_dl.dataset)
         elapsed = time() - time_start
 
