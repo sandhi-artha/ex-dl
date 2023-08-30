@@ -1,6 +1,20 @@
 cfg = {
     'data_path' : '../data/cifar10',
-    'train_bs' : 64,
-    'test_bs' : 64,
-    'workers': 8,
+    'train_bs' : 1024,
+    'test_bs' : 1024,
+    'workers': 2,
+    'trainer': {
+        'deterministic': True,
+        'gpus': 1,
+        'profiler': 'simple',
+        'max_epochs': 5,
+        'precision': 16,
+    },
+    'is_wandb': 1,
+    'log_dir': 'save',
+    'name': '9_base',
+    'project': 'ex-dl',
+    'entity': 's_wangiyana',
+    'comment': 'cache_1024-bs_4-workers',
+    'cache_ds': 1,
 }

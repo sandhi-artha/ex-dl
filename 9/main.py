@@ -1,12 +1,14 @@
 import os
 from glob import glob
+from time import time
 
 import pandas as pd
 import pytorch_lightning as pl
+from pytorch_lightning import loggers
 from torch.utils.data import DataLoader
 
 from src.cfg import cfg
-from src.dataset import CifarDS
+from src.dataset import CifarDS, CacheCifarDS
 from src.model import LeNet
 from src.module import MyModule
 
@@ -18,25 +20,40 @@ def main(cfg):
 
     print(f'train: {train_df.shape[0]} test: {test_df.shape[0]}')
 
-    train_ds = CifarDS(cfg, train_df)
-    test_ds = CifarDS(cfg, test_df)
-
+    if cfg['cache_ds']:
+        start = time()
+        train_ds = CacheCifarDS(cfg, train_df)
+        test_ds = CacheCifarDS(cfg, test_df)
+        cache_time = time() - start
+        print(f'cache time: {cache_time:.2f}s')
+    else:
+        train_ds = CifarDS(cfg, train_df)
+        test_ds = CifarDS(cfg, test_df)
+    
     train_dl = DataLoader(train_ds, batch_size=cfg['train_bs'], shuffle=True, num_workers=cfg["workers"])
     test_dl = DataLoader(test_ds, batch_size=cfg["test_bs"], num_workers=cfg["workers"])
     # import pdb; pdb.set_trace()
 
+    if cfg['is_wandb']:
+        if not os.path.isdir(cfg['log_dir']):   # fix the wandb save_dir not writeable
+            os.makedirs(cfg['log_dir'])
+        logger = loggers.WandbLogger(save_dir=cfg['log_dir'], name=cfg['name'],
+                                     project=cfg['project'], entity=cfg['entity'])
+    else:
+        logger = True
+
     model = LeNet(in_channels=3, num_classes=10)
     module = MyModule(cfg, model)
     trainer = pl.Trainer(
-        deterministic=True,
-        gpus=1,
-        logger=True,
-        profiler='simple',
-        max_epochs= 2,
-        precision=16,
+        logger=logger,
+        **cfg['trainer']
     )
 
+    start = time()
     trainer.fit(module, train_dataloader=train_dl, val_dataloaders=test_dl)
+    elapsed = (time() - start)
+    with open('time.log', 'a') as f:
+        f.write(f"{cfg['comment']}\t{elapsed:.2f}\n")
 
 if __name__ == '__main__':
     main(cfg)

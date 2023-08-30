@@ -1,0 +1,14 @@
+first	467.61
+non-deterministic	467.65
+2-workers	174.26
+1-worker	176.15
+2-worker_256-bs	172.33
+2-worker_1024-bs	174.72
+2-worker_no-profiler	174.89
+2-worker_no-wandb	169.87
+first-again	477.26
+cache_64-bs_1-worker	99.29	23.04
+cache_256-bs_1-worker	79.46	23.21
+cache_1024-bs_1-worker	74.35	22.48
+cache_1024-bs_2-workers	65.23	22.18
+cache_1024-bs_4-workers	69.87	22.15
