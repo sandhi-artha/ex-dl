@@ -23,3 +23,6 @@ super CNN convergence in CIFAR-10
 
 ## 8
 reinforcement learning - model-less Q learning
+
+## 9
+CIFAR 10 PyTorch Lightning 1.3.8 (raven-env)

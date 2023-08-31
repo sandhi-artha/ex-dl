@@ -1,4 +1,10 @@
 data
 result
 priv*
+2
+5
+utils
+wandb
 __pycache__
+lightning_logs
+save
