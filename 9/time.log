@@ -12,3 +12,7 @@ cache_256-bs_1-worker	79.46	23.21
 cache_1024-bs_1-worker	74.35	22.48
 cache_1024-bs_2-workers	65.23	22.18
 cache_1024-bs_4-workers	69.87	22.15
+download-ds_bs-1024	125.24
+2_pt-lg2_download-ds_bs-1024	177.74
+2_pt-lg2_download-ds_bs-1024	174.74
+3_pt-lg2_cache_bs-1024	75.17
