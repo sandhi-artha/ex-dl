@@ -144,8 +144,10 @@ class Trainer():
         self.best_model = copy.deepcopy(model.state_dict())
 
     def configure_optimizers(self, lr=1e-3):
-        self.optimizer = torch.optim.Adam(
-            self.model.parameters(), lr=lr)
+        # self.optimizer = torch.optim.Adam(
+        #     self.model.parameters(), lr=lr)
+        self.optimizer = torch.optim.SGD(
+            self.model.parameters(), lr=lr, momentum=0.9)
         self.scheduler = torch.optim.lr_scheduler.OneCycleLR(
             self.optimizer, max_lr=0.1, steps_per_epoch=len(self.train_dl),
             epochs=self.cfg['epochs'], pct_start=0.15, anneal_strategy='linear')
@@ -192,7 +194,6 @@ class Trainer():
 
                 run_acc += acc.item() * images.size(0)
                 run_loss += loss.item() * images.size(0)
-                break
 
             val_acc = run_acc / self.train_ds_len
 
@@ -223,7 +224,6 @@ class Trainer():
         print('')
 
     def one_epoch(self, n):
-        # print(f'Epoch: {n}/{self.cfg["epochs"]}')
         self.metrics['epoch'].append(n)
 
         self.on_epoch_train()
@@ -243,7 +243,7 @@ class Trainer():
 CFG = {
     'data_path': '../data/cifar10-dl',
     'lr' : 1e-3,
-    'workers': 1,
+    'workers': 0,
     'train_bs': 128,
     'test_bs': 128,
     'epochs' : 20,
