@@ -29,14 +29,14 @@ class Cacher:
             train_ds = self.load_cache(mode='train')
         else:
             train_ds = torchvision.datasets.CIFAR10(
-                root=root, train=True, download=True, transform=self.transform)
+                root=self.root, train=True, download=True, transform=self.transform)
             train_ds = self.cache_ds(train_ds, mode='train')
         
         if self.cache_exist('test'):
             test_ds = self.load_cache(mode='test')
         else:
             test_ds = torchvision.datasets.CIFAR10(
-                root=root, train=False, download=True, transform=self.transform)
+                root=self.root, train=False, download=True, transform=self.transform)
             test_ds = self.cache_ds(test_ds, mode='test')
         
         return train_ds, test_ds
