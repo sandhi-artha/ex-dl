@@ -1,6 +1,12 @@
 # PyTorch Scheduler
 
-### The code
+## The code
+to get `lr` there are 2 ways:
+```python
+optimizer.param_groups[0]['lr']
+lr_scheduler.get_last_lr()[0]
+```
+
 run on your windows laptop, with cache Cifar10, it benchmarked:
 ```
 loading saved cache

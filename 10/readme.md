@@ -24,7 +24,10 @@
 - AE
 - custom
 
-# Timings
+# Logs
+
+## Improving loading
+Baseline
 ```
 epoch   lr      t_train loss    acc     t_val   val_los val_acc t_total
    0    0.0360  9.2533  1.9422  0.2745  2.5297  0.0046  0.0009     11.78
@@ -48,7 +51,7 @@ epoch   lr      t_train loss    acc     t_val   val_los val_acc t_total
   18    0.0059  7.6473  2.3032  0.1000  2.3852  0.0059  0.0003    198.05
   19    -0.0000 7.6559  2.3029  0.1000  2.3984  0.0059  0.0003    208.11
 ```
-using cache_ds, timings improve significantly
+- using cache dataset improves from 208s to 135s. please note the val metrics are static bcz I forgot to remove `break` from the val batch loop. but it's not important right now
 ```
 epoch   lr      t_train loss    acc     t_val   val_los val_acc t_total
    0    0.0360  5.5762  1.9177  0.2830  2.3387  0.0043  0.0008      7.91
@@ -72,6 +75,34 @@ epoch   lr      t_train loss    acc     t_val   val_los val_acc t_total
   18    0.0059  4.2062  2.3031  0.1000  2.3373  0.0059  0.0003    129.07
   19    -0.0000 4.4676  2.3030  0.1000  2.3352  0.0059  0.0003    135.87
 ```
+- using `pin_memory=True` in pytorch `DataLoader` did not improve anything. probably because of the small dataset, but not sure exactly when this parameter is beneficial, [see discussion](https://discuss.pytorch.org/t/when-to-set-pin-memory-to-true/19723/23). Great explanation from this [SO answer](https://stackoverflow.com/a/55564072).
+- changed `num_workers` from 1 -> 0. this significantly improves training from 135s to 45s. the reason seems to be bcz of thread spawning, even when having 1 worker. the overhead is too much for simple operation as accessing data from memory, therefore, doing everything in the main process greatly improves when using cached dataset. Also here I changed optimizer from `Adam` to `SGD` and see improvements in val metrics (I've removed the `break` in val loop).
+```
+epoch   lr      t_train loss    acc     t_val   val_los val_acc t_total
+   0    0.0360  3.3644  2.1358  0.1937  0.2592  0.3595  0.0674      3.62
+   1    0.0681  1.8212  1.6458  0.4023  0.2554  0.3043  0.0867      5.70
+   2    0.1000  1.8152  1.4765  0.4694  0.2504  0.3061  0.0893      7.77
+   3    0.0941  1.8117  1.3946  0.5036  0.2461  0.2674  0.1062      9.82
+   4    0.0882  1.9241  1.3092  0.5380  0.3239  0.2597  0.1093     12.07
+   5    0.0823  2.0022  1.2574  0.5605  0.3345  0.2539  0.1120     14.41
+   6    0.0765  1.9656  1.2042  0.5769  0.3329  0.2666  0.1082     16.71
+   7    0.0706  1.9824  1.1705  0.5889  0.2929  0.2660  0.1076     18.98
+   8    0.0647  1.9334  1.1110  0.6084  0.3015  0.2528  0.1130     21.22
+   9    0.0588  1.9510  1.0861  0.6195  0.3050  0.2686  0.1093     23.47
+  10    0.0529  2.0013  1.0217  0.6415  0.2866  0.2559  0.1140     25.76
+  11    0.0470  1.9993  0.9909  0.6534  0.2465  0.2655  0.1109     28.01
+  12    0.0412  1.9349  0.9421  0.6710  0.2705  0.2603  0.1140     30.21
+  13    0.0353  1.8798  0.9123  0.6800  0.2623  0.2649  0.1133     32.35
+  14    0.0294  1.9377  0.8420  0.7015  0.2868  0.2680  0.1144     34.58
+  15    0.0235  1.9053  0.7795  0.7216  0.2701  0.2617  0.1180     36.75
+  16    0.0176  1.9345  0.7236  0.7395  0.2681  0.2821  0.1150     38.96
+  17    0.0118  1.9395  0.6344  0.7695  0.2878  0.2811  0.1191     41.18
+  18    0.0059  1.9202  0.5446  0.8015  0.2556  0.2968  0.1201     43.36
+  19    -0.0000 1.9768  0.4538  0.8357  0.3005  0.3068  0.1206     45.64
+```
+
+### Improving metrics
+
 
 # Env
 `torch-lg` with pytorch 2.0.0
