@@ -5,38 +5,46 @@ import torch
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
+import torchvision.transforms as T
 
 class CacheCifarDS(Dataset):
-    def __init__(self, images, labels):
+    def __init__(self, images, labels, transforms=None):
+        self.transforms = transforms
         self.images, self.labels = images, labels
 
     def __getitem__(self, idx):
-        return self.images[idx], self.labels[idx]
+        if self.transforms is None:
+            return self.images[idx], self.labels[idx]
+        else:
+            return self.transforms(self.images[idx]), self.labels[idx]
 
     def __len__(self):
         return len(self.images)
 
 
 class Cacher:
-    def __init__(self, root='./data'):
+    def __init__(self, root='./data', transforms=None):
         self.root = Path(root)
-        self.transform = torchvision.transforms.ToTensor()
+        if transforms is None:
+            self.transforms = {'train': None, 'test': None}
+        else:
+            self.transforms = transforms
         
     def get_ds(self):
         """check if array exist, if not, download and create a cache"""
-
+        init_transform = torchvision.transforms.ToTensor()
         if self.cache_exist('train'):
             train_ds = self.load_cache(mode='train')
         else:
             train_ds = torchvision.datasets.CIFAR10(
-                root=self.root, train=True, download=True, transform=self.transform)
+                root=self.root, train=True, download=True, transform=init_transform)
             train_ds = self.cache_ds(train_ds, mode='train')
         
         if self.cache_exist('test'):
             test_ds = self.load_cache(mode='test')
         else:
             test_ds = torchvision.datasets.CIFAR10(
-                root=self.root, train=False, download=True, transform=self.transform)
+                root=self.root, train=False, download=True, transform=init_transform)
             test_ds = self.cache_ds(test_ds, mode='test')
         
         return train_ds, test_ds
@@ -51,7 +59,7 @@ class Cacher:
         print('loading saved cache')
         images = torch.load(self.root / f'{mode}_images.pt')
         labels = torch.load(self.root / f'{mode}_labels.pt')
-        cache_ds = CacheCifarDS(images, labels)
+        cache_ds = CacheCifarDS(images, labels, self.transforms[mode])
         return cache_ds
 
     def cache_ds(self, ds, mode='train'):
@@ -102,6 +110,68 @@ class ExampleCNN(nn.Module):
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
         return x
+    
+class CNN2(nn.Module):
+    # https://www.kaggle.com/code/faizanurrahmann/cifar-10-object-classification-best-model
+    def __init__(self):
+        super().__init__()
+        self.layers = nn.Sequential(
+            nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3),   # 32,30,30
+            nn.ReLU(),
+            nn.BatchNorm2d(num_features=32),
+            nn.Dropout(p=0.2),
+
+            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3),  # 64,28,28
+            nn.ReLU(),
+            nn.BatchNorm2d(num_features=64),
+            nn.MaxPool2d(kernel_size=2, stride=2),                      # 64,14,14
+
+            nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, padding=1), # 128,14,14
+            nn.ReLU(),
+            nn.BatchNorm2d(num_features=128),
+            nn.MaxPool2d(kernel_size=2, stride=2),                      # 128,7,7
+
+            nn.Conv2d(in_channels=128, out_channels=64, kernel_size=3), # 128,5,5
+            nn.BatchNorm2d(num_features=64),
+            nn.MaxPool2d(kernel_size=4, stride=4),                      # 128,1,1
+            nn.Dropout(p=0.2),
+
+            nn.Flatten(),
+            nn.Linear(in_features=64, out_features=256),
+            nn.ReLU(),
+            nn.Dropout(p=0.1),
+            nn.Linear(in_features=256, out_features=10)
+        )
+
+        self.loss_fn = nn.CrossEntropyLoss()
+
+    def loss_function(self, *inputs) -> Tensor:
+        return self.loss_fn(*inputs)
+
+    def forward(self, x) -> Tensor:
+        return self.layers(x)
+
+class PT_CNN(nn.Module):
+    def __init__(self, pretrained=False):
+        super().__init__()
+        if pretrained:
+            weights = torchvision.models.ResNet18_Weights.IMAGENET1K_V1
+        else:
+            weights = None
+
+        self.net = torchvision.models.resnet18(weights=weights, num_classes=10)
+        # modifies the network to accept different input size (originally for 224x224)
+        #   replace the first conv layer
+        #   replace the maxpool with Identity layer (just passes input to output) so no pooling is performed
+        self.net.conv1 = nn.Conv2d(3, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        self.net.maxpool = nn.Identity()
+        self.loss_fn = nn.CrossEntropyLoss()
+
+    def loss_function(self, *inputs) -> Tensor:
+        return self.loss_fn(*inputs)
+
+    def forward(self, x) -> Tensor:
+        return self.net(x)
 
 from torchmetrics.classification import MulticlassAccuracy
 from torch.utils.data import DataLoader
@@ -174,7 +244,7 @@ class Trainer():
             run_loss += loss.item() * images.size(0)    # then divide by N later
 
         self.metrics['t_train'].append(time()-t_train)
-        self.metrics['lr'].append(self.scheduler.get_last_lr()[0])  # returns a list with single element?
+        self.metrics['lr'].append(self.optimizer.param_groups[0]['lr'])  # returns a list with single element?
         self.metrics['loss'].append(run_loss / self.train_ds_len)
         self.metrics['acc'].append(run_acc / self.train_ds_len)
 
@@ -255,6 +325,11 @@ CFG = {
 from torch.utils.data import DataLoader
 
 def main(cfg: CFG):
+    transforms = {
+        'train': T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        'test': T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+    }
+
     cacher = Cacher(cfg['data_path'])
     train_ds, test_ds = cacher.get_ds()
     print(f'train: {len(train_ds)} test: {len(test_ds)}')
@@ -262,7 +337,9 @@ def main(cfg: CFG):
     train_dl = DataLoader(train_ds, batch_size=cfg['train_bs'], shuffle=True, num_workers=cfg["workers"])
     test_dl = DataLoader(test_ds, batch_size=cfg["test_bs"], num_workers=cfg["workers"])
 
-    model = ExampleCNN()
+    # model = ExampleCNN()
+    model = CNN2()
+    # model = PT_CNN(pretrained=False)
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print('training using:', device)
     trainer = Trainer(cfg, model, train_dl, test_dl, device)
