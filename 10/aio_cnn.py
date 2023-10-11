@@ -341,6 +341,17 @@ class Trainer():
         return self.metrics
 
 
+def seed_torch(seed=42):
+    import random, os
+    import numpy as np
+
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+
 ### CFG ###
 CFG = {
     'data_path': '../data/cifar10-dl',
@@ -357,12 +368,18 @@ CFG = {
 from torch.utils.data import DataLoader
 
 def main(cfg: CFG):
+    seed_torch(42)
+
     transforms = {
-        'train': T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        'train': T.Compose([
+            # T.RandomCrop(size=32, padding=4),
+            T.RandomHorizontalFlip(),
+            T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        ]),
         'test': T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
     }
 
-    cacher = Cacher(cfg['data_path'], transforms=None)
+    cacher = Cacher(cfg['data_path'], transforms=transforms)
     train_ds, test_ds = cacher.get_ds()
     print(f'train: {len(train_ds)} test: {len(test_ds)}')
     
