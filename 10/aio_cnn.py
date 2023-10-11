@@ -248,7 +248,7 @@ class Trainer():
             self.model.parameters(), lr=lr, momentum=0.9)
         self.scheduler = torch.optim.lr_scheduler.OneCycleLR(
             self.optimizer, max_lr=0.1, steps_per_epoch=len(self.train_dl),
-            epochs=self.cfg['epochs'], pct_start=0.15, anneal_strategy='linear')
+            epochs=self.cfg['epochs'], pct_start=0.3, anneal_strategy='linear')
     
     def on_epoch_train(self):
         run_loss = 0.0
@@ -298,10 +298,9 @@ class Trainer():
                 run_acc += acc.item() * images.size(0)
                 run_loss += loss.item() * images.size(0)
 
-            val_acc = run_acc / self.train_ds_len
-
+        val_acc = run_acc / self.val_ds_len
         self.metrics['t_val'].append(time()-t_val)
-        self.metrics['val_los'].append(run_loss / self.train_ds_len)
+        self.metrics['val_los'].append(run_loss / self.val_ds_len)
         self.metrics['val_acc'].append(val_acc)
         
         self.model_checkpoint(val_acc)
@@ -363,7 +362,7 @@ def main(cfg: CFG):
         'test': T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
     }
 
-    cacher = Cacher(cfg['data_path'], transforms=transforms)
+    cacher = Cacher(cfg['data_path'], transforms=None)
     train_ds, test_ds = cacher.get_ds()
     print(f'train: {len(train_ds)} test: {len(test_ds)}')
     
