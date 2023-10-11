@@ -1,3 +1,30 @@
+### UTILS ###
+# ref: https://github.com/pytorch/examples/blob/2c57b0011a096aef83da3b5265a14db2f80cb124/imagenet/main.py#L363
+class AverageMeter(object):
+    """Computes and stores the average and current value"""
+    def __init__(self, name, fmt=':f'):
+        self.name = name
+        self.fmt = fmt
+        self.reset()
+
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count
+
+    def __str__(self):
+        fmtstr = '{name} {val' + self.fmt + '} ({avg' + self.fmt + '})'
+        return fmtstr.format(**self.__dict__)
+
+
+
 ### DATASET ###
 from pathlib import Path
 import torchvision
@@ -200,6 +227,7 @@ class Trainer():
         self.metrics = {
             'epoch': [],
             'lr': [],
+            't_data': [],   # note t_data is in ms
             't_train': [],
             'loss' : [],
             'acc': [],
@@ -226,9 +254,12 @@ class Trainer():
         run_loss = 0.0
         run_acc = 0.0
 
+        t_data = AverageMeter('t_data', ':6.3f')
         t_train = time()
+        end = time()
         self.model.train()
         for i, (images, labels) in enumerate(self.train_dl):
+            t_data.update(time() - end)      # measure data loading time
             images = images.to(self.device)     # B,C,H,W
             labels = labels.to(self.device)     # B,1
             logits = self.model(images)         # B,10
@@ -242,8 +273,10 @@ class Trainer():
             
             run_acc += acc.item() * images.size(0)      # avg_metric per batch * B
             run_loss += loss.item() * images.size(0)    # then divide by N later
+            end = time()
 
         self.metrics['t_train'].append(time()-t_train)
+        self.metrics['t_data'].append(t_data.avg*1000)
         self.metrics['lr'].append(self.optimizer.param_groups[0]['lr'])  # returns a list with single element?
         self.metrics['loss'].append(run_loss / self.train_ds_len)
         self.metrics['acc'].append(run_acc / self.train_ds_len)
@@ -330,7 +363,7 @@ def main(cfg: CFG):
         'test': T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
     }
 
-    cacher = Cacher(cfg['data_path'])
+    cacher = Cacher(cfg['data_path'], transforms=transforms)
     train_ds, test_ds = cacher.get_ds()
     print(f'train: {len(train_ds)} test: {len(test_ds)}')
     
