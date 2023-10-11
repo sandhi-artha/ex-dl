@@ -349,6 +349,28 @@ epoch   lr      t_data  t_train loss    acc     t_val   val_los val_acc t_total
   19    -0.0006 4.5119  2.4672  0.1918  0.9332  0.1799  0.6620  0.8073     54.24
 ```
 
+#### Systems benchmark
+- with transforms: hflip & normalize, max_lr=0.1
+
+bs: 128
+- gpu usage: 28-44%
+- gpu power: 123/140W, temp: 82C
+- gpu memory: 1594 MiB / 16376 MiB
+
+bs: 512
+- gpu usage: 28-44%
+- gpu power: 112/140W, temp: 81C
+- gpu memory: 2396 MiB / 16376 MiB
+
+bs: 1024
+- gpu usage: 28-44%
+- gpu power: 108/140W, temp: 81C
+- gpu memory: 3400 MiB / 16376 MiB
+
+observed:
+- higher bs, uses higher gpu memory, slightly lower gpu power, but gpu usage does not increase.
+
+
 ### Model
 CNN2, uses 4 blocks, batch normalization and maxpool
 
@@ -364,7 +386,10 @@ effects of batch size:
 - lr: `PiecewiseLinear([0, 15, 30, 35], [0, 0.1, 0.005, 0])`
 - **NOTE**: final training time varies, +-3s. the benchmark for project was run 50x and averaged.
 
-bs=128
+(bs=128) system:
+- gpu usage: 98-99%
+- gpu power: 139/140W, temp: 87C
+- gpu memory: 2112 MiB / 16376 MiB
 ```
     32       0.0030       8.5419       0.0288       0.9913       0.5181       0.1895       0.9439     273.3984
     33       0.0020       8.5360       0.0245       0.9932       0.5186       0.1890       0.9435     281.9344
@@ -408,3 +433,27 @@ conclude:
 - as bs becomes larger, each epoch become slightly faster up to a point (diminishing returns)
 - data loading is fast here, bcz all data were already preprocessed and stored in the gpu memory. next, the DA methods also were done in GPU, so there's no movement of data between CPU and GPU memory
 - however, up to some point, processing more images take up more time (more numbers to crunch), therefore higher data loading time
+
+
+
+
+# hlb-CIFAR10
+config:
+- bs: 1024
+
+system
+- gpu usage: at 100% almost all the time
+- gpu power: 139/140W, temp: 89C
+- gpu memory: 8012 MiB / 16376 MiB
+
+metrics:
+- val_loss: around 1.00
+- ema_val_acc: 0.93-0.95
+- total_time: around 22.2s
+
+observed:
+- quite high validation loss, uses `CrossEntropyLoss`, so it's not percentage.
+- utilized 100% of gpu, is very impressive
+
+
+
