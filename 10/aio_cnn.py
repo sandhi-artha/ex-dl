@@ -247,7 +247,7 @@ class Trainer():
         self.optimizer = torch.optim.SGD(
             self.model.parameters(), lr=lr, momentum=0.9)
         self.scheduler = torch.optim.lr_scheduler.OneCycleLR(
-            self.optimizer, max_lr=0.1, steps_per_epoch=len(self.train_dl),
+            self.optimizer, max_lr=self.cfg['max_lr'], steps_per_epoch=len(self.train_dl),
             epochs=self.cfg['epochs'], pct_start=0.3, anneal_strategy='linear')
     
     def on_epoch_train(self):
@@ -356,6 +356,7 @@ def seed_torch(seed=42):
 CFG = {
     'data_path': '../data/cifar10-dl',
     'lr' : 1e-3,
+    'max_lr': 0.1,
     'workers': 0,
     'train_bs': 128,
     'test_bs': 128,
