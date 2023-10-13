@@ -104,6 +104,34 @@ class Cacher:
         cache_ds = CacheCifarDS(images, labels)
         return cache_ds
 
+### Custom Dataloader
+class MyDataLoader():
+    def __init__(self, batchsize, root='./', mode='train'):
+        print('loading saved cache')
+        self.mode = mode
+        self.bs = batchsize
+        self.images = torch.load(Path(root) / f'{mode}_images.pt')
+        self.images = self.images.to('cuda')
+        self.labels = torch.load(Path(root) / f'{mode}_labels.pt')
+        self.labels = self.labels.to('cuda')
+
+    @torch.no_grad()
+    def get_batches(self):
+        """if the last batch is not full, it will drop it"""
+        num_epoch_examples = len(self.images)
+        shuffled = torch.randperm(num_epoch_examples, device='cuda')
+
+        # Send the images to an (in beta) channels_last to help improve tensor core occupancy (and reduce NCHW <-> NHWC thrash) during training
+        # images = images.to(memory_format=torch.channels_last)
+        for idx in range(num_epoch_examples // self.bs):
+            if not (idx+1)*self.bs > num_epoch_examples: ## Use the shuffled randperm to assemble individual items into a minibatch
+                yield self.images.index_select(0, shuffled[idx*self.bs:(idx+1)*self.bs]), \
+                    self.labels.index_select(0, shuffled[idx*self.bs:(idx+1)*self.bs]) ## Each item is only used/accessed by the network once per epoch. :D
+
+    def __len__(self):
+        return len(self.images) // self.bs
+
+
 ### MODEL ###
 
 import torch
@@ -224,6 +252,8 @@ class Trainer():
         # logging
         self.train_ds_len = len(train_dl.dataset)
         self.val_ds_len = len(val_dl.dataset)
+        # self.train_ds_len = len(train_dl.images)
+        # self.val_ds_len = len(val_dl.images)
         self.metrics = {
             'epoch': [],
             'lr': [],
@@ -259,6 +289,7 @@ class Trainer():
         end = time()
         self.model.train()
         for i, (images, labels) in enumerate(self.train_dl):
+        # for i, (images, labels) in enumerate(self.train_dl.get_batches()):
             t_data.update(time() - end)      # measure data loading time
             images = images.to(self.device)     # B,C,H,W
             labels = labels.to(self.device)     # B,1
@@ -289,6 +320,7 @@ class Trainer():
         with torch.no_grad():
             self.model.eval()
             for i, (images, labels) in enumerate(self.val_dl):
+            # for i, (images, labels) in enumerate(self.val_dl.get_batches()):
                 images = images.to(self.device)
                 labels = labels.to(self.device)
                 logits = self.model(images)
@@ -358,8 +390,8 @@ CFG = {
     'lr' : 1e-3,
     'max_lr': 0.1,
     'workers': 0,
-    'train_bs': 128,
-    'test_bs': 128,
+    'train_bs': 500,
+    'test_bs': 500,
     'epochs' : 20,
 }
 
@@ -386,6 +418,8 @@ def main(cfg: CFG):
     
     train_dl = DataLoader(train_ds, batch_size=cfg['train_bs'], shuffle=True, num_workers=cfg["workers"])
     test_dl = DataLoader(test_ds, batch_size=cfg["test_bs"], num_workers=cfg["workers"])
+    # train_dl = MyDataLoader(cfg['train_bs'], cfg['data_path'], mode='train')
+    # test_dl = MyDataLoader(cfg['test_bs'], cfg['data_path'], mode='test')
 
     # model = ExampleCNN()
     model = CNN2()

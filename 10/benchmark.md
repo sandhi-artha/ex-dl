@@ -371,12 +371,93 @@ observed:
 - higher bs, uses higher gpu memory, slightly lower gpu power, but gpu usage does not increase.
 
 
+A closer inspection:
+- turns out, it you poll much quicker, you actually get clearer gpu utils
+- obtained 50-80% gpu utils with your code. doubling batch size did not affect this
+- when using custom dataloader, it went 70-94% of gpu utils
+
 ### Model
 CNN2, uses 4 blocks, batch normalization and maxpool
 
 
 
 ### Scheduler
+
+
+### cuda timing
+in hlb-cifar10, they used something like
+```python
+starter = torch.cuda.Event(enable_timing=True)
+ender = torch.cuda.Event(enable_timing=True)
+for epoch in range(epochs):
+  torch.cuda.synchronize()
+  starter.record()
+  
+  on_epoch_train()
+
+  ender.record()
+  torch.cuda.synchronize()
+  t_train += 1e-3 * starter.elapsed_time(ender)
+```
+right now it doesn't have much difference, I think bcz you're not doing much processing in the gpu, unlike their code (gpu data augmentation).
+
+
+### Storing all data in GPU
+only sending them to gpu:
+- when all images and labels from train and test ds are sent to device, it used up 965MB of VRAM. this is similar to what hlb-cifar10 is doing.
+- when creating ds, send images and labels to device (no transform). when this is used with default `DataLoader`, it had no time improvement.
+- for some reason, when increasing the batch size for dataloader, it still used larger GPU memory. bs=1024 is slightly faster than bs=128 (~10s). even higher bs=2000 did not change timing.
+
+with custom dataloader
+- with no transforms, this shows drastic improvement in `t_data`, bellow is with `bs=1000`. vram=3338MB, gpu-utils: 99%. `t_data` is 0.05ms averaged compared to 5ms averaged when using normal dataloader.
+```
+epoch   lr      t_data  t_train loss    acc     t_val   val_los val_acc t_total
+   0    0.0201  0.0741  2.7435  1.9521  0.2648  0.1240  1.9234  0.2557      2.87
+   1    0.0361  0.0509  2.2395  1.4722  0.4573  0.1238  1.3441  0.5144      5.23
+   2    0.0522  0.0508  2.2278  1.2356  0.5529  0.1657  1.2648  0.5356      7.62
+   3    0.0682  0.0501  2.2367  1.0779  0.6147  0.1638  1.1095  0.5970     10.02
+   4    0.0843  0.0506  2.2503  0.9624  0.6608  0.1241  1.0608  0.6420     12.40
+   5    0.0999  0.0502  2.2405  0.8737  0.6929  0.1240  1.3351  0.5614     14.76
+   6    0.0927  0.0508  2.2318  0.7881  0.7241  0.1241  0.9848  0.6520     17.12
+   7    0.0856  0.0517  2.2368  0.7159  0.7513  0.1243  0.8043  0.7198     19.48
+   8    0.0784  0.0506  2.2395  0.6616  0.7689  0.1246  0.7812  0.7330     21.85
+   9    0.0713  0.0501  2.2378  0.5972  0.7934  0.1248  0.7947  0.7317     24.21
+  10    0.0641  0.0495  2.2391  0.5567  0.8069  0.1254  0.8685  0.7005     26.57
+  11    0.0570  0.0496  2.2453  0.5167  0.8210  0.1249  0.7794  0.7421     28.94
+  12    0.0499  0.0476  2.2314  0.4737  0.8352  0.1252  0.6996  0.7734     31.30
+  13    0.0427  0.0483  2.2381  0.4429  0.8443  0.1692  0.6694  0.7795     33.71
+  14    0.0356  0.0482  2.2341  0.4104  0.8587  0.1718  0.7232  0.7651     36.11
+  15    0.0284  0.0489  2.2517  0.3770  0.8685  0.1254  0.6575  0.7901     38.49
+  16    0.0213  0.0480  2.2413  0.3375  0.8830  0.1255  0.6773  0.7823     40.86
+  17    0.0141  0.0472  2.2405  0.3108  0.8925  0.1256  0.6232  0.7982     43.22
+  18    0.0070  0.0472  2.2394  0.2797  0.9024  0.1257  0.6381  0.7999     45.59
+  19    -0.0001 0.0476  2.2458  0.2482  0.9152  0.1259  0.6292  0.8042     47.96
+```
+- below is with `bs=2000`. what's obvious is that `t_data` is not 2x longer, despite doubling the batch size. and it makes sense bcz data is already in the gpu, so it's just slicing a larger portion of the array. vram=5120MB, gpu-utils: 99%. what's still unclear is with lower t_data, why `t_train` didn't change? there must be some process in the loop that adds waiting.
+```
+epoch   lr      t_data  t_train loss    acc     t_val   val_los val_acc t_total
+   0    0.0201  0.1078  2.7157  2.1062  0.2126  0.1219  2.5879  0.1012      2.84
+   1    0.0362  0.0584  2.2007  1.6963  0.3615  0.1212  1.8702  0.2807      5.16
+   2    0.0523  0.0582  2.2053  1.4547  0.4666  0.1209  1.3953  0.4919      7.49
+   3    0.0684  0.0581  2.2014  1.2729  0.5380  0.1213  1.4797  0.4812      9.81
+   4    0.0845  0.0583  2.1978  1.1394  0.5903  0.1215  1.2232  0.5619     12.13
+   5    0.0997  0.0579  2.1985  1.0365  0.6285  0.1217  1.1798  0.5879     14.45
+   6    0.0926  0.0588  2.1989  0.9490  0.6654  0.1218  0.9347  0.6706     16.77
+   7    0.0854  0.0601  2.2027  0.8750  0.6911  0.1216  0.9119  0.6783     19.09
+   8    0.0783  0.0647  2.2089  0.8084  0.7152  0.1220  1.0210  0.6471     21.42
+   9    0.0711  0.0636  2.2035  0.7568  0.7348  0.1221  0.8582  0.7016     23.75
+  10    0.0640  0.0615  2.2216  0.7025  0.7529  0.1227  0.8352  0.7116     26.09
+  11    0.0569  0.0619  2.2037  0.6560  0.7737  0.1221  0.7387  0.7483     28.42
+  12    0.0497  0.0611  2.2097  0.6128  0.7850  0.1221  0.7436  0.7452     30.75
+  13    0.0426  0.0652  2.2136  0.5755  0.8010  0.1224  0.7570  0.7468     33.09
+  14    0.0354  0.0602  2.2123  0.5370  0.8144  0.1223  0.6846  0.7594     35.42
+  15    0.0283  0.0604  2.2082  0.4988  0.8281  0.1226  0.6771  0.7743     37.75
+  16    0.0211  0.0617  2.2133  0.4645  0.8382  0.1224  0.6964  0.7721     40.09
+  17    0.0140  0.0591  2.2074  0.4350  0.8485  0.1225  0.6680  0.7738     42.42
+  18    0.0069  0.0619  2.2095  0.4067  0.8596  0.1227  0.6531  0.7825     44.75
+  19    -0.0003 0.0664  2.2118  0.3836  0.8684  0.1222  0.6365  0.7874     47.08
+```
+- new question: when using normal dataloader with no transforms it took 54s for `bs=1024`, but it used 40% gpu. with custom dataloader, it took 47s, but used 100% gpu. that's not much improvement? but you used full capacity? is something holding back the gpu?
 
 
 # Cifar10-fast
