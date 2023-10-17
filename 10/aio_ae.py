@@ -2,10 +2,55 @@
 from pathlib import Path
 import torchvision
 import torch
+from torch import Tensor
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
 import torchvision.transforms as T
+
+class InvNormalize(T.Normalize):
+    def __init__(self,mean,std,*args,**kwargs):
+        new_mean = [-m/s for m,s in zip(mean,std)]
+        new_std = [1/s for s in std]
+        super().__init__(new_mean, new_std, *args, **kwargs)
+
+
+def get_n_samples_per_class(ds, n=2) -> Tensor:
+    """find n samples for each class and create a torch array"""
+    num_classes = 10
+    classes = list(range(num_classes))
+    class_samples = [[] for _ in range(num_classes)]
+    
+    tot = 0
+    for x, y in ds:             # loop through dataset
+        for c in classes:       # loop through possible class index
+            if y == c:          # if the label matches a class
+                if len(class_samples[c]) < n:   # check if we already have n samples of that class
+                    class_samples[c].append((x,y))
+                    tot += 1
+                break           # to reduce comp, if it matches an unfilled class, move to next sample
+        
+        if tot > n*num_classes: # check if all class samples are full
+            break
+    
+    # check if we have n samples for each class
+    for cls in class_samples:
+        assert len(cls) == n
+    
+    # reformat to batch of images and batch of labels
+    images = []
+    labels = []
+    for cls in class_samples:
+        for x,y in cls:
+            images.append(x)
+            labels.append(y)
+    
+    # stack them by creating a batch dimension
+    images, labels = torch.stack(images, dim=0), torch.stack(labels, dim=0)
+    assert images.shape[0] == n*num_classes
+    assert labels.shape[0] == n*num_classes
+
+    return images, labels
 
 class CacheCifarDS(Dataset):
     def __init__(self, images, labels, transforms=None):
@@ -110,6 +155,8 @@ class SimpleAE(nn.Module):
 
         self.loss_fn = nn.MSELoss()
 
+    def encode(self, input: Tensor) -> Tensor:
+        return self.encoder(input)
     
     def forward(self, input: Tensor) -> Tensor:
         z = self.encoder(input)
@@ -122,14 +169,17 @@ class SimpleAE(nn.Module):
 
 ### TRAINER ###
 from time import time
+from pathlib import Path
+import matplotlib.pyplot as plt
 
 class Trainer():
-    def __init__(self, cfg: dict, model: SimpleAE, train_dl, val_dl, device):
+    def __init__(self, cfg: dict, model: SimpleAE, train_dl, val_dl, device, viz_data: dict):
         self.train_dl = train_dl
         self.val_dl = val_dl
         self.cfg = cfg
         self.model = model.to(device)
         self.device = device
+        self.viz_data = viz_data
 
         # optimizer
         self.configure_optimizers(cfg['lr'])
@@ -143,6 +193,8 @@ class Trainer():
             'rec_los': [],
             't_total': [],
         }
+        self.save_dir = Path(cfg['save_dir'])
+        self.save_dir.mkdir(parents=True, exist_ok=True)
 
     def configure_optimizers(self, lr):
         self.optimizer = torch.optim.Adam(
@@ -196,8 +248,57 @@ class Trainer():
         self.t_total = 0.0
         for epoch in range(self.cfg['epochs']):
             self.one_epoch(epoch)
+            self.viz_reconstruction(self.cfg['n_viz'], **self.viz_data['train'], fn=f'train_ep{epoch}')
+            self.viz_reconstruction(self.cfg['n_viz'], **self.viz_data['test'], fn=f'test_ep{epoch}')
         return self.metrics
     
+    def viz_reconstruction(self, n: int, images: Tensor, labels: Tensor, inv_transform, fn):
+        num_classes = 10
+
+        f, ax = plt.subplots(num_classes, n*2, figsize=(n*2*2, num_classes*2))
+        
+        self.model.eval()
+        with torch.no_grad():
+            # emb = self.model.encode(images.to(self.device))
+            recs = self.model(images.to(self.device))
+            recs = recs.detach().cpu()
+
+        i = 0
+        for r in range(num_classes):
+            for c in range(0, n*2, 2):
+                image = inv_transform(images[i])
+                stats = get_image_stats(image)
+                ax[r, c].imshow(image.permute(1,2,0))
+                ax[r, c].set_title(f'{labels[i].item()}\n{stats}')
+                ax[r, c].axis('off')
+
+                rec = inv_transform(recs[i])
+                stats = get_image_stats(rec)
+                rec_loss = torch.sqrt(self.model.loss_function(image, rec))
+                ax[r, c+1].imshow(clip_image(rec.permute(1,2,0)))
+                ax[r, c+1].set_title(f'rmse: {rec_loss.item():.4f}\n{stats}')
+                ax[r, c+1].axis('off')
+                i += 1
+
+        plt.tight_layout()
+        f.savefig(self.save_dir / f'{fn}.png')
+        plt.close(f)
+
+def get_image_stats(image: Tensor) -> str:
+    """returns:
+        max  | min
+        mean | std
+    """
+    return '{:.3f} | {:.3f} \n{:.3f} | {:.3f}'.format(
+        image.max().item(),
+        image.min().item(),
+        image.mean().item(),
+        image.std().item(),
+    )
+
+def clip_image(image: Tensor) -> Tensor:
+    """clips to 0 and 1 to remove matplotlib warnings"""
+    return torch.clip(image, min=0.0, max=1.0)
 
 def seed_torch(seed=42):
     import random, os
@@ -220,6 +321,8 @@ CFG = {
     'train_bs': 128,
     'test_bs': 128,
     'epochs' : 10,
+    'n_viz': 2,
+    'save_dir': 'save/ae4',
 }
 
 
@@ -231,9 +334,20 @@ from torch.utils.data import DataLoader
 def main(cfg: CFG):
     seed_torch(42)
 
-    cacher = Cacher(cfg['data_path'], transforms=None)
+    mean = (0.4914, 0.4822, 0.4465)
+    std = (0.2023, 0.1994, 0.2010)
+    normalize = {'train': T.Normalize(mean, std), 'test': T.Normalize(mean, std)}
+    denormalize = InvNormalize(mean, std)
+
+    cacher = Cacher(cfg['data_path'], transforms=normalize)
     train_ds, test_ds = cacher.get_ds()
     print(f'train: {len(train_ds)} test: {len(test_ds)}')
+
+    viz_data = {'train': {}, 'test': {}}
+    viz_data['train']['images'], viz_data['train']['labels'] = get_n_samples_per_class(train_ds, cfg['n_viz'])
+    viz_data['train']['inv_transform'] = denormalize
+    viz_data['test']['images'], viz_data['test']['labels'] = get_n_samples_per_class(test_ds, cfg['n_viz'])
+    viz_data['test']['inv_transform'] = denormalize
 
     train_dl = DataLoader(train_ds, batch_size=cfg['train_bs'], shuffle=True, num_workers=cfg["workers"])
     test_dl = DataLoader(test_ds, batch_size=cfg["test_bs"], num_workers=cfg["workers"])
@@ -241,8 +355,11 @@ def main(cfg: CFG):
     model = SimpleAE(input_shape=(3,32,32))
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print('training using:', device)
-    trainer = Trainer(cfg, model, train_dl, test_dl, device)
+    trainer = Trainer(cfg, model, train_dl, test_dl, device, viz_data)
     metrics = trainer.fit()
+
+    # visualize 2 samples from each class in train and test set
+    # trainer.viz_reconstruction(cfg['n_viz'], **viz_data['test'], fn='test')
 
 if __name__=='__main__':
     main(CFG)
