@@ -135,11 +135,11 @@ class SimpleAE(nn.Module):
         channels = input_shape[0]
         
         self.encoder = nn.Sequential(
-            nn.Conv2d(channels, 64, 3, stride=2, padding=1),
+            nn.Conv2d(channels, 64, 3, stride=2, padding=1),    # size/2
             nn.LeakyReLU(),
-            nn.Conv2d(64, 128, 3, stride=2, padding=1),
+            nn.Conv2d(64, 128, 3, stride=2, padding=1),         # size/2
             nn.LeakyReLU(),
-            nn.Conv2d(128, 256, 7),
+            nn.Conv2d(128, 256, 7),                             # size-6
             nn.LeakyReLU()
         )
 
@@ -165,6 +165,35 @@ class SimpleAE(nn.Module):
 
     def loss_function(self, *inputs) -> Tensor:
         return self.loss_fn(*inputs)
+
+
+class LinearAE(SimpleAE):
+    def __init__(self, input_shape, latent_dim=128):
+        super().__init__(input_shape=input_shape)
+
+        self.ch = input_shape[0]
+
+        self.w = ((input_shape[1] // 2) // 2) -6
+        lin_size = self.w * self.w * 256
+        self.lin_enc = nn.Linear(in_features=lin_size, out_features=latent_dim)
+        self.lin_dec = nn.Linear(in_features=latent_dim, out_features=lin_size)
+
+    def encode(self, input: Tensor) -> Tensor:
+        x = self.encoder(input)
+        # flatten to 1D along batch size
+        x = x.view(x.shape[0], -1)
+        return self.lin_enc(x)
+    
+    def decode(self, input: Tensor) -> Tensor:
+        x = self.lin_dec(input)
+        # expand back to 4D
+        x = x.view(x.shape[0], 256, self.w, self.w)
+        return self.decoder(x)
+    
+    def forward(self, input: Tensor) -> Tensor:
+        z = self.encode(input)
+        x_hat = self.decode(z)
+        return x_hat
 
 
 ### TRAINER ###
@@ -342,6 +371,11 @@ def main(cfg: CFG):
     cacher = Cacher(cfg['data_path'], transforms=normalize)
     train_ds, test_ds = cacher.get_ds()
     print(f'train: {len(train_ds)} test: {len(test_ds)}')
+
+    model = LinearAE(input_shape=(3,32,32), latent_dim=128)
+    x, y = train_ds[0]
+    pred = model(x.unsqueeze(0))
+    import pdb;pdb.set_trace()
 
     viz_data = {'train': {}, 'test': {}}
     viz_data['train']['images'], viz_data['train']['labels'] = get_n_samples_per_class(train_ds, cfg['n_viz'])
