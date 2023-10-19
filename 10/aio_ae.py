@@ -158,9 +158,12 @@ class SimpleAE(nn.Module):
     def encode(self, input: Tensor) -> Tensor:
         return self.encoder(input)
     
+    def decode(self, input: Tensor) -> Tensor:
+        return self.decoder(input)
+    
     def forward(self, input: Tensor) -> Tensor:
-        z = self.encoder(input)
-        x_hat = self.decoder(z)
+        z = self.encode(input)
+        x_hat = self.decode(z)
         return x_hat
 
     def loss_function(self, *inputs) -> Tensor:
@@ -190,16 +193,14 @@ class LinearAE(SimpleAE):
         x = x.view(x.shape[0], 256, self.w, self.w)
         return self.decoder(x)
     
-    def forward(self, input: Tensor) -> Tensor:
-        z = self.encode(input)
-        x_hat = self.decode(z)
-        return x_hat
 
 
 ### TRAINER ###
 from time import time
 from pathlib import Path
 import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
+import numpy as np
 
 class Trainer():
     def __init__(self, cfg: dict, model: SimpleAE, train_dl, val_dl, device, viz_data: dict):
@@ -288,9 +289,13 @@ class Trainer():
         
         self.model.eval()
         with torch.no_grad():
-            # emb = self.model.encode(images.to(self.device))
-            recs = self.model(images.to(self.device))
+            emb = self.model.encode(images.to(self.device))
+            recs = self.model.decode(emb)
+            emb = emb.detach().cpu()
             recs = recs.detach().cpu()
+
+        c_labels = labels_to_colors(labels.numpy(), 10)
+        save_pca(emb, c_labels, self.save_dir / f'pca_{fn}.png')
 
         i = 0
         for r in range(num_classes):
@@ -312,6 +317,37 @@ class Trainer():
         plt.tight_layout()
         f.savefig(self.save_dir / f'{fn}.png')
         plt.close(f)
+
+def labels_to_colors(arr: np.ndarray, num_classes: int) -> np.ndarray:
+    c_arr = np.zeros(shape=(arr.shape[0], 3))
+    cmap = plt.get_cmap('tab10')
+    for c in range(num_classes):
+        c_arr[np.argwhere(arr == c)] = cmap.colors[c]
+    return c_arr
+
+def pca_stats(arr_red: np.ndarray) -> str:
+    """ xmax | xmin | xmean | xstd
+        ymax | ymin | ymean | ystd
+    """
+    return '{:.3f} | {:.3f} | {:.3f} | {:.3f}\n{:.3f} | {:.3f} | {:.3f} | {:.3f}'.format(
+        np.max(arr_red[:, 0]), np.min(arr_red[:, 0]),
+        np.mean(arr_red[:, 0]), np.std(arr_red[:, 0]),
+        np.max(arr_red[:, 1]), np.min(arr_red[:, 1]),
+        np.mean(arr_red[:, 1]), np.std(arr_red[:, 1]),
+    )
+
+def save_pca(emb: Tensor, c_labels: np.ndarray, save_fp):
+    pca = PCA(n_components=2)
+    pca.fit(emb)
+    emb2d = pca.transform(emb)
+
+    f, ax = plt.subplots(1,1, figsize=(6,6))
+    ax.scatter(emb2d[:,0], emb2d[:,1], c=c_labels)
+    ax.axis('equal')
+    ax.set(xlim=(-15,15), ylim=(-15,15))
+    ax.set_title(pca_stats(emb2d))
+    f.savefig(save_fp)
+    plt.close(f)
 
 def get_image_stats(image: Tensor) -> str:
     """returns:
@@ -351,7 +387,7 @@ CFG = {
     'test_bs': 128,
     'epochs' : 10,
     'n_viz': 2,
-    'save_dir': 'save/ae4',
+    'save_dir': 'save/ae6',
 }
 
 
@@ -372,11 +408,6 @@ def main(cfg: CFG):
     train_ds, test_ds = cacher.get_ds()
     print(f'train: {len(train_ds)} test: {len(test_ds)}')
 
-    model = LinearAE(input_shape=(3,32,32), latent_dim=128)
-    x, y = train_ds[0]
-    pred = model(x.unsqueeze(0))
-    import pdb;pdb.set_trace()
-
     viz_data = {'train': {}, 'test': {}}
     viz_data['train']['images'], viz_data['train']['labels'] = get_n_samples_per_class(train_ds, cfg['n_viz'])
     viz_data['train']['inv_transform'] = denormalize
@@ -386,7 +417,8 @@ def main(cfg: CFG):
     train_dl = DataLoader(train_ds, batch_size=cfg['train_bs'], shuffle=True, num_workers=cfg["workers"])
     test_dl = DataLoader(test_ds, batch_size=cfg["test_bs"], num_workers=cfg["workers"])
 
-    model = SimpleAE(input_shape=(3,32,32))
+    # model = SimpleAE(input_shape=(3,32,32))
+    model = LinearAE(input_shape=(3,32,32), latent_dim=128)
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print('training using:', device)
     trainer = Trainer(cfg, model, train_dl, test_dl, device, viz_data)
