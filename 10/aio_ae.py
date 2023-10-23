@@ -15,7 +15,7 @@ class InvNormalize(T.Normalize):
         super().__init__(new_mean, new_std, *args, **kwargs)
 
 
-def get_n_samples_per_class(ds, n=2) -> Tensor:
+def get_n_samples_per_class(ds, n=2) -> tuple[Tensor, Tensor]:
     """find n samples for each class and create a torch array"""
     num_classes = 10
     classes = list(range(num_classes))
@@ -172,6 +172,7 @@ class SimpleAE(nn.Module):
 
 class LinearAE(SimpleAE):
     def __init__(self, input_shape, latent_dim=128):
+        # override basic functionalities of SimpleAE
         super().__init__(input_shape=input_shape)
 
         self.ch = input_shape[0]
@@ -183,13 +184,13 @@ class LinearAE(SimpleAE):
 
     def encode(self, input: Tensor) -> Tensor:
         x = self.encoder(input)
-        # flatten to 1D along batch size
+        # flatten to 1D along batch size, out_shape: (B,1)
         x = x.view(x.shape[0], -1)
         return self.lin_enc(x)
     
     def decode(self, input: Tensor) -> Tensor:
         x = self.lin_dec(input)
-        # expand back to 4D
+        # expand back to 4D, out_shape: (B, C, H, W)
         x = x.view(x.shape[0], 256, self.w, self.w)
         return self.decoder(x)
     
@@ -226,7 +227,7 @@ class Trainer():
         self.save_dir = Path(cfg['save_dir'])
         self.save_dir.mkdir(parents=True, exist_ok=True)
 
-    def configure_optimizers(self, lr):
+    def configure_optimizers(self, lr: float):
         self.optimizer = torch.optim.Adam(
             self.model.parameters(), lr=lr)
         
@@ -250,7 +251,7 @@ class Trainer():
         self.metrics['lr'].append(self.optimizer.param_groups[0]['lr'])
         self.metrics['rec_los'].append(run_loss / self.train_ds_len)
 
-    def print_log(self, epoch):
+    def print_log(self, epoch: int) -> None:
         if epoch == 0:
             for key in self.metrics.keys():
                 print(key, end='\t')    # print headers
@@ -265,7 +266,7 @@ class Trainer():
                 print(f'{value[epoch]:.4f}', end='\t')
         print('')
 
-    def one_epoch(self, n):
+    def one_epoch(self, n: int) -> None:
 
         self.on_epoch_train()
 
@@ -274,7 +275,7 @@ class Trainer():
         self.metrics['t_total'].append(self.t_total)
         self.print_log(n)
 
-    def fit(self):
+    def fit(self) -> dict:
         self.t_total = 0.0
         for epoch in range(self.cfg['epochs']):
             self.one_epoch(epoch)
@@ -282,7 +283,7 @@ class Trainer():
             self.viz_reconstruction(self.cfg['n_viz'], **self.viz_data['test'], fn=f'test_ep{epoch}')
         return self.metrics
     
-    def viz_reconstruction(self, n: int, images: Tensor, labels: Tensor, inv_transform, fn):
+    def viz_reconstruction(self, n: int, images: Tensor, labels: Tensor, inv_transform, fn: str) -> None:
         num_classes = 10
 
         f, ax = plt.subplots(num_classes, n*2, figsize=(n*2*2, num_classes*2))
@@ -336,7 +337,7 @@ def pca_stats(arr_red: np.ndarray) -> str:
         np.mean(arr_red[:, 1]), np.std(arr_red[:, 1]),
     )
 
-def save_pca(emb: Tensor, c_labels: np.ndarray, save_fp):
+def save_pca(emb: Tensor, c_labels: np.ndarray, save_fp) -> None:
     pca = PCA(n_components=2)
     pca.fit(emb)
     emb2d = pca.transform(emb)
@@ -365,7 +366,7 @@ def clip_image(image: Tensor) -> Tensor:
     """clips to 0 and 1 to remove matplotlib warnings"""
     return torch.clip(image, min=0.0, max=1.0)
 
-def seed_torch(seed=42):
+def seed_torch(seed=42) -> None:
     import random, os
     import numpy as np
 
