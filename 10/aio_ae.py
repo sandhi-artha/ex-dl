@@ -195,6 +195,76 @@ class LinearAE(SimpleAE):
         return self.decoder(x)
     
 
+class SimpleVAE(SimpleAE):
+    def __init__(self, input_shape: tuple, latent_dim=128):
+        super().__init__(input_shape=input_shape)
+
+        self.ch = input_shape[0]
+
+        self.w = ((input_shape[1] // 2) // 2) -6
+        self.conv_shape = (256, self.w, self.w)  # (C, H, W)
+        self.lin_size = 256 * self.w * self.w
+        self.latent_dim = latent_dim
+
+        self.lin_mu = nn.Linear(self.lin_size, latent_dim)
+        self.lin_var = nn.Linear(self.lin_size, latent_dim)
+        self.lin_dec = nn.Linear(latent_dim, self.lin_size)
+
+    def encode(self, input: Tensor) -> tuple[Tensor, Tensor]:
+        x = self.encoder(input)
+        # flatten to 1D along batch size, out_shape: (B,lin_size)
+        x = x.view(x.shape[0], self.lin_size)
+        mu = self.lin_mu(x)         # [B,latent_dim]
+        log_var = self.lin_var(x)   # [B,latent_dim]
+        return mu, log_var
+    
+    def decode(self, input: Tensor) -> Tensor:
+        x = self.lin_dec(input)
+        # expand back to 4D, out_shape: (B, C, H, W)
+        x = x.view(x.shape[0], *self.conv_shape)
+        return self.decoder(x)
+    
+    def reparameterize(self, mu: Tensor, log_var: Tensor) -> Tensor:
+        """
+        Reparameterization trick to sample from N(mu, var) from
+        N(0,1).
+        :param mu: Mean of the latent Gaussian [B x D]
+        :param log_var: Standard deviation of the latent Gaussian [B x D]
+        :return: [B x D]
+        """
+        std = torch.exp(0.5 * log_var)
+        eps = torch.randn_like(std)
+        return eps * std + mu
+    
+    def forward(self, input: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+        mu, log_var = self.encode(input)
+        z = self.reparameterize(mu, log_var)
+        x_hat = self.decode(z)
+        return x_hat, mu, log_var
+    
+    def loss_function(self,
+                      input: Tensor,
+                      rec: Tensor,
+                      mu: Tensor,
+                      log_var: Tensor,
+                      kld_w: float) -> dict:
+        
+        rec_loss = self.loss_fn(input, rec)
+        kld_loss = torch.mean(-0.5 * torch.sum(1 + log_var - mu ** 2 - log_var.exp(), dim=1), dim=0)
+
+        # weighted loss used for backprop
+        w_loss = rec_loss + kld_w * kld_loss    # kld is weighted by curr batch size
+        return {'w_los': w_loss,
+                'rec_los': rec_loss,
+                'kld_los': -kld_loss}
+    
+    def sample(self, n_samples: int, device):
+        """sample from the latent space and returns the image space map"""
+        # get sample from standard normal distribution
+        z = torch.randn(n_samples, self.latent_dim)
+        return self.decode(z.to(device))
+
+
 
 ### TRAINER ###
 from time import time
@@ -320,6 +390,67 @@ class Trainer():
         f.savefig(self.save_dir / f'{fn}.png')
         plt.close(f)
 
+class TrainerVAE(Trainer):
+    def __init__(self, cfg: dict, model: SimpleVAE,
+                 train_dl, val_dl, device, viz_data: dict):
+        super().__init__(cfg, model, train_dl, val_dl, device, viz_data)
+        self.model = model
+        self.metrics = {
+            'epoch': [],
+            'lr': [],
+            't_train': [],
+            'w_los': [],
+            'rec_los': [],
+            'kld_los': [],
+            't_total': [],
+        }
+        
+    def on_epoch_train(self):
+        run_loss = {'w_los': 0.0, 'rec_los': 0.0, 'kld_los': 0.0}
+        
+        t_train = time()
+        self.model.train()
+        for i, (x, _) in enumerate(self.train_dl):
+            kld_w = x.shape[0] / self.train_ds_len
+
+            x = x.to(self.device)
+            x_hat, mu, log_var = self.model(x)
+            loss = self.model.loss_function(x, x_hat, mu, log_var, kld_w)
+            
+            self.optimizer.zero_grad()
+            loss['w_los'].backward()
+            self.optimizer.step()
+
+            for k in loss.keys():
+                run_loss[k] += loss[k].item() * x.size(0)   # will be divided by N later
+
+        self.metrics['t_train'].append(time() - t_train)
+        self.metrics['lr'].append(self.optimizer.param_groups[0]['lr'])
+        for k in run_loss.keys():
+            self.metrics[k].append(run_loss[k] / self.train_ds_len)
+
+    def fit(self) -> dict:
+        self.t_total = 0.0
+        for epoch in range(self.cfg['epochs']):
+            self.one_epoch(epoch)
+            self.viz_reconstruction(self.cfg['n_viz'], **self.viz_data['train'], fn=f'train_ep{epoch}')
+            self.viz_reconstruction(self.cfg['n_viz'], **self.viz_data['test'], fn=f'test_ep{epoch}')
+        return self.metrics
+    
+    def generate(self, x: Tensor) -> tuple[Tensor, Tensor]:
+        """generates embeddings and reconstruction images"""
+        self.model.eval()
+        with torch.no_grad():
+            x = x.to(self.device)
+            mu, log_var = self.model.encode(x)
+            z = self.model.reparameterize(mu, log_var)
+            x_hat = self.model.decode(z)
+            z = z.detach().cpu()
+            x_hat = x_hat.detach().cpu()
+        return z, x_hat
+
+
+### TRAINER UTILS ###
 def labels_to_colors(arr: np.ndarray, num_classes: int) -> np.ndarray:
     c_arr = np.zeros(shape=(arr.shape[0], 3))
     cmap = plt.get_cmap('tab10')
@@ -389,7 +520,7 @@ CFG = {
     'test_bs': 128,
     'epochs' : 10,
     'n_viz': 4,
-    'save_dir': 'save/new_ae',
+    'save_dir': 'save/new_vae',
 }
 
 
@@ -420,10 +551,14 @@ def main(cfg: CFG):
     test_dl = DataLoader(test_ds, batch_size=cfg["test_bs"], num_workers=cfg["workers"])
 
     # model = SimpleAE(input_shape=(3,32,32))   # can't visualize PCA embeddings using this model!
-    model = LinearAE(input_shape=(3,32,32), latent_dim=128)
+    # model = LinearAE(input_shape=(3,32,32), latent_dim=128)
+    model = SimpleVAE(input_shape=(3,32,32), latent_dim=128)
+
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print('training using:', device)
-    trainer = Trainer(cfg, model, train_dl, test_dl, device, viz_data)
+
+    # trainer = Trainer(cfg, model, train_dl, test_dl, device, viz_data)
+    trainer = TrainerVAE(cfg, model, train_dl, test_dl, device, viz_data)
     metrics = trainer.fit()
 
     # visualize 2 samples from each class in train and test set
