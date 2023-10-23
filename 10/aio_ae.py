@@ -283,22 +283,23 @@ class Trainer():
             self.viz_reconstruction(self.cfg['n_viz'], **self.viz_data['test'], fn=f'test_ep{epoch}')
         return self.metrics
     
-    def viz_reconstruction(self, n: int, images: Tensor, labels: Tensor, inv_transform, fn: str) -> None:
-        num_classes = 10
-
-        f, ax = plt.subplots(num_classes, n*2, figsize=(n*2*2, num_classes*2))
-        
+    def generate(self, images: Tensor) -> tuple[Tensor, Tensor]:
         self.model.eval()
         with torch.no_grad():
             emb = self.model.encode(images.to(self.device))
             recs = self.model.decode(emb)
             emb = emb.detach().cpu()
             recs = recs.detach().cpu()
-
-        c_labels = labels_to_colors(labels.numpy(), 10)
+        return emb, recs
+    
+    def viz_reconstruction(self, n: int, images: Tensor, labels: Tensor, inv_transform, fn: str) -> None:
+        num_classes = 10
+        emb, recs = self.generate(images)
+        c_labels = labels_to_colors(labels.numpy(), num_classes)
         save_pca(emb, c_labels, self.save_dir / f'pca_{fn}.png')
 
         i = 0
+        f, ax = plt.subplots(num_classes, n*2, figsize=(n*2*2, num_classes*2))
         for r in range(num_classes):
             for c in range(0, n*2, 2):
                 image = inv_transform(images[i])
@@ -309,9 +310,9 @@ class Trainer():
 
                 rec = inv_transform(recs[i])
                 stats = get_image_stats(rec)
-                rec_loss = torch.sqrt(self.model.loss_function(image, rec))
+                rmse = torch.sqrt(self.model.loss_fn(image, rec))
                 ax[r, c+1].imshow(clip_image(rec.permute(1,2,0)))
-                ax[r, c+1].set_title(f'rmse: {rec_loss.item():.4f}\n{stats}')
+                ax[r, c+1].set_title(f'rmse: {rmse.item():.4f}\n{stats}')
                 ax[r, c+1].axis('off')
                 i += 1
 
@@ -387,8 +388,8 @@ CFG = {
     'train_bs': 128,
     'test_bs': 128,
     'epochs' : 10,
-    'n_viz': 2,
-    'save_dir': 'save/ae6',
+    'n_viz': 4,
+    'save_dir': 'save/new_ae',
 }
 
 
@@ -418,7 +419,7 @@ def main(cfg: CFG):
     train_dl = DataLoader(train_ds, batch_size=cfg['train_bs'], shuffle=True, num_workers=cfg["workers"])
     test_dl = DataLoader(test_ds, batch_size=cfg["test_bs"], num_workers=cfg["workers"])
 
-    # model = SimpleAE(input_shape=(3,32,32))
+    # model = SimpleAE(input_shape=(3,32,32))   # can't visualize PCA embeddings using this model!
     model = LinearAE(input_shape=(3,32,32), latent_dim=128)
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print('training using:', device)
