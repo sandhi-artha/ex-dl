@@ -62,3 +62,24 @@ tensor([[  5, 113,  79,  ..., 188, 117, 177],
         [161,  40, 110,  ..., 185,  95, 175],
         [165, 147, 131,  ..., 192,  89, 213]], dtype=torch.uint8)
 ```
+
+
+## Standardize
+the `Normalize` transform with calculated mean and std from the dataset will result in standardizing the image: having the mean ~0 and std ~1. This is known as the standard score or z-score and usually helps in training. so far this is true on dataset with range [0,1] and dataset range [0, >1] but it's a normal distribution. see in the script `learn/transforms.py` and run the function `unbounded_norm`.
+
+## Computing mean and std of dataset
+if your dataset fits into memory, then you just need to do `images.mean(dim=[0,2,3])` to get the mean for each channel (assuming it's `B,C,H,W`).
+
+but if dataset don't fit in memory, need to make a loop.
+
+lesson learned:
+- doing average of each channel over batch of image `[B,C,H,W]`:
+```python
+arr = torch.rand((16,3,32,32))
+arr.mean(dim=[0,2,3])
+
+# equivalent of .mean
+arr.sum(dim=[0,2,3]) / (16*32*32)  # remember, reduction is not just div by n
+```
+
+calculating standard deviation from batches, explained in [this post](http://datagenetics.com/blog/november22017/index.html)
