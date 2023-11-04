@@ -250,10 +250,11 @@ class SimpleVAE(SimpleAE):
                       kld_w: float) -> dict:
         
         rec_loss = self.loss_fn(input, rec)
-        kld_loss = torch.mean(-0.5 * torch.sum(1 + log_var - mu ** 2 - log_var.exp(), dim=1), dim=0)
+        kld_loss = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp(), dim=1) # sum over latent var
+        kld_loss = torch.mean(kld_loss, dim=0) # avg over batch size
 
         # weighted loss used for backprop
-        w_loss = rec_loss + kld_w * kld_loss    # kld is weighted by curr batch size
+        w_loss = rec_loss + kld_w * kld_loss    # kld_w can be used to insert beta weights
         return {'w_los': w_loss,
                 'rec_los': rec_loss,
                 'kld_los': -kld_loss}
