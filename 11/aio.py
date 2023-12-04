@@ -8,6 +8,7 @@ import torchvision
 from torchvision.datasets import STL10
 import torchvision.transforms as T
 import matplotlib.pyplot as plt
+import kornia.augmentation as A
 
 def view_images(ds):
     NUM_IMAGES = 8
@@ -36,7 +37,7 @@ class ContrastiveTransformations(object):
 def get_dataset(transform=None):
     transform_list = T.Compose([
         T.RandomHorizontalFlip(),
-        T.RandomResizedCrop(size=96),
+        T.RandomResizedCrop(size=96, antialias=True),
         T.RandomApply([
             T.ColorJitter(brightness=0.5,
                           contrast=0.5,
@@ -58,15 +59,34 @@ def get_dataset(transform=None):
     print(f'train data: {len(train_data)}')
     return unlabeled_data, train_data
 
+class ContrastiveDA(torch.nn.Module):
+    def __init__(self, n_views=2):
+        super().__init__()
+        self.n_views = n_views
+        self.transforms = torch.nn.Sequential(
+            A.RandomHorizontalFlip(),
+            A.RandomResizedCrop(size=(96,96)),
+            A.ColorJitter(brightness=0.5,
+                          contrast=0.5,
+                          saturation=0.5,
+                          hue=0.1, p=0.8),
+            A.Normalize((0.5,), (0.5))
+        )
+
+    @torch.no_grad()    # disable gradients for efficiency
+    def forward(self, x: Tensor) -> Tensor:
+        return [self.transforms(x) for i in range(self.n_views)]
+    
 
 ### MODULE ###
 import pytorch_lightning as pl
 import torch.optim as optim
 import torch.nn as nn
 import torch.nn.functional as F
+from time import time
 
 class SimCLR(pl.LightningModule):
-    def __init__(self, cfg_module: dict, cfg):
+    def __init__(self, cfg_module: dict, cfg, len_train_dl: int, transforms):
         super().__init__()
         # convert class attributes to key, value pairs
         hparams = {k:v for k,v in cfg.__dict__.items() if not k.startswith('__')}
@@ -74,6 +94,12 @@ class SimCLR(pl.LightningModule):
 
         self.cfg = cfg_module
         self.load_model(cfg_module['hidden_dim'])
+
+        self.transforms = transforms
+
+        self.t_batches = []
+        self.len_train_dl = len_train_dl
+        self.t_epoch = 0.0
 
     def load_model(self, hidden_dim: int):
         # Base model f(.)
@@ -95,6 +121,13 @@ class SimCLR(pl.LightningModule):
                                                             eta_min=self.cfg['lr']/50)
         return [optimizer], [lr_scheduler]
     
+    def on_after_batch_transfer(self, batch, dataloader_idx):
+        # just after batch.to(device)
+        x, y = batch
+        # if self.trainer.training:     # apply only during training
+        x = self.transforms(x)  # => we perform GPU/Batched data augmentation
+        return x, y
+
     def info_nce_loss(self, batch, mode='train'):
         imgs, _ = batch     # [[B,C,H,W], [B,C,H,W]]
         imgs = torch.cat(imgs, dim=0)   # [2B,C,H,W]
@@ -134,8 +167,19 @@ class SimCLR(pl.LightningModule):
 
         return nll
     
+    def on_train_epoch_start(self):
+        self.t_epoch = time()
+
     def training_step(self, batch: tuple, batch_idx: int):
-        return self.info_nce_loss(batch, mode='train')
+        start = time()
+        loss = self.info_nce_loss(batch, mode='train')
+        self.t_batches.append(time() - start)
+        return loss
+    
+    def on_train_epoch_end(self):
+        print(f'average batch: {sum(self.t_batches) / self.len_train_dl} s')
+        print(f'epoch time: {time() - self.t_epoch}')
+        self.t_epoch = 0.0
 
     def validation_step(self, batch: tuple, batch_idx: int):
         self.info_nce_loss(batch, mode='val')
@@ -143,41 +187,89 @@ class SimCLR(pl.LightningModule):
 
 ### CONFIG ###
 class CFG:
+    data_path = '../data/stl10-dl'
+    out_dir = 'save'
     module = {
         'hidden_dim' : 128,
         'lr' : 5e-4,
         'weight_decay' : 1e-4,
-        'max_epochs' : 5,
+        'max_epochs' : 20,
         'temperature' : 0.07,
     }
     batch_size = 256
-    num_workers = 4
+    num_workers = 3
     trainer = {
         'deterministic': True,
         'profiler': None,           # 'simple', 'advanced'
-        'max_epochs': 5,
+        'max_epochs': 30,
         'precision': '16-mixed',    # '16-mixed', '32-true'
+    }
+    wandb = {
+        'do': True,
+        'wandb_args': {
+            'name': '0_simclr',     # run name. SPECIFY THIS despite not using wandb
+            'project': 'ex-dl-11',
+            'entity': 's_wangiyana'
+        }
     }
 
 
 
 ### TRAINER ###
+from pathlib import Path
 from torch.utils.data import DataLoader
+from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
 def main(cfg: CFG):
     torch.set_float32_matmul_precision("medium")
     pl.seed_everything(42)
 
-    unlabeled_data, train_data_contrast = get_dataset()
-    train_dl = DataLoader(unlabeled_data, batch_size=cfg.batch_size, shuffle=True,
-                              drop_last=True, pin_memory=True, num_workers=cfg.num_workers)
-    val_dl = DataLoader(train_data_contrast, batch_size=cfg.batch_size, shuffle=False,
-                            drop_last=False, pin_memory=True, num_workers=cfg.num_workers)
-    
+    # dataset
+    pre_transform = T.ToTensor()
+    unlabeled_ds, train_ds = get_dataset(pre_transform)
 
-    module = SimCLR(cfg.module, cfg)
+    train_dl = DataLoader(unlabeled_ds, batch_size=cfg.batch_size, shuffle=True,
+                          drop_last=True, pin_memory=True, num_workers=cfg.num_workers,
+                          persistent_workers=True)
+    val_dl = DataLoader(train_ds, batch_size=cfg.batch_size, shuffle=False,
+                        drop_last=False, pin_memory=True, num_workers=cfg.num_workers,
+                        persistent_workers=True)
 
-    trainer = pl.Trainer(**cfg.trainer)
+    # module
+    con_transforms = ContrastiveDA(n_views=2)
+    len_train_dl = len(train_dl)
+    module = SimCLR(cfg.module, cfg, len_train_dl, con_transforms)
+
+    # save output
+    save_dir = Path(cfg.out_dir) / cfg.wandb['wandb_args']['name']
+    save_dir.mkdir(parents=True, exist_ok=True)
+
+    # logger
+    if cfg.wandb['do']:
+        cfg.wandb['wandb_args']['save_dir'] = save_dir
+        logger = WandbLogger(**cfg.wandb['wandb_args'])
+        hparams = {k:v for k,v in cfg.__dict__.items() if not k.startswith('__')}
+        logger.log_hyperparams(hparams)
+    else:
+        logger = True   # use default TensorBoard
+
+    # callback
+    callbacks = [
+        LearningRateMonitor(logging_interval='step'),
+        ModelCheckpoint(
+            monitor="val_loss",
+            dirpath=save_dir,
+            mode="min",
+            filename=f'model-{{val_loss:.4f}}',
+            save_top_k=1,
+            save_last=True,
+            verbose=1,
+        )
+    ]
+
+    trainer = pl.Trainer(callbacks=callbacks, logger=logger, default_root_dir=save_dir,
+                         **cfg.trainer)
     trainer.fit(module, train_dl, val_dl)
 
 
@@ -277,5 +369,5 @@ def evaluate(cfg: CFG):
 
 
 if __name__=='__main__':
-    # main(CFG)
-    evaluate(CFG)
+    main(CFG)
+    # evaluate(CFG)
