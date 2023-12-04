@@ -26,3 +26,12 @@ reinforcement learning - model-less Q learning
 
 ## 9
 CIFAR 10 PyTorch Lightning 1.3.8 (raven-env)
+
+## 10
+everything CIFAR10?
+
+## 11
+contrastive learning
+
+- SIMCLR
+self-supervised contrastive learning. [reference](https://uvadlc-notebooks.readthedocs.io/en/latest/tutorial_notebooks/tutorial17/SimCLR.html)
