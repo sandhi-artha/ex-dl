@@ -16,6 +16,8 @@ for each given image $x$, we obtain 2 views (using different data augmentations)
 the network consists of a base encoder $f(.)$ and a projection head $g(.)$. in the original paper, $g(.)$ is a MLP w non-linearities.
 
 ### training
+- uses ResNet18, training from scratch.
+- add MLP to classification head, output the latent vector (size of `hidden_dim`)
 - uses InfoNCE loss. compares similarity $(z_i, z_j)$ with $(z_i, z_{others})$. softmax is calculated over similarity values. similarity function uses cosine similarity [-1, 1]
 
 ### post-training

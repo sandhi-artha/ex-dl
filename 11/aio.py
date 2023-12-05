@@ -212,6 +212,7 @@ class CFG:
             'entity': 's_wangiyana'
         }
     }
+    ckpt_path = 'save/ubuntu/6c8hfloo/checkpoints/epoch=29-step=11700.ckpt'
 
 
 
@@ -277,6 +278,23 @@ def main(cfg: CFG):
 from collections import OrderedDict
 import numpy as np
 from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
+
+from contextlib import contextmanager
+import pathlib
+
+@contextmanager
+def set_posix_windows():
+    """
+        use when doing `torch.load` from a model trained in ubuntu. use as context manager
+        ref: https://stackoverflow.com/questions/57286486/i-cant-load-my-model-because-i-cant-put-a-posixpath
+    """
+    posix_backup = pathlib.PosixPath
+    try:
+        pathlib.PosixPath = pathlib.WindowsPath
+        yield
+    finally:
+        pathlib.PosixPath = posix_backup
 
 def condition_state_dict(load_state_dict: dict, curr_state_dict: dict) -> dict:
     """saved ckpt from PL can have layer names: model.encoder.0.weight, ...
@@ -298,12 +316,16 @@ def labels_to_colors(arr: np.ndarray, num_classes: int) -> np.ndarray:
         c_arr[np.argwhere(arr == c)] = cmap.colors[c]
     return c_arr
 
-def save_pca(emb: Tensor, labels: Tensor, save_fp='pca.png') -> None:
+def save_emb(emb: Tensor, labels: Tensor, dim_red='pca', save_fp='emb.png') -> None:
     c_labels = labels_to_colors(labels.numpy(), num_classes=10)
 
-    pca = PCA(n_components=2)
-    pca.fit(emb)
-    emb2d = pca.transform(emb)
+    if dim_red=='pca':
+        pca = PCA(n_components=2)
+        pca.fit(emb)
+        emb2d = pca.transform(emb)
+    elif dim_red=='tsne':
+        tsne = TSNE(n_components=2)
+        emb2d = tsne.fit_transform(emb)
 
     f, ax = plt.subplots(1,1, figsize=(6,6))
     ax.scatter(emb2d[:,0], emb2d[:,1], c=c_labels)
@@ -314,9 +336,8 @@ def save_pca(emb: Tensor, labels: Tensor, save_fp='pca.png') -> None:
     plt.close(f)
 
 class EvalSimCLR(pl.LightningModule):
-    def __init__(self, ckpt_path):
+    def __init__(self, checkpoint):
         super().__init__()
-        checkpoint = torch.load(ckpt_path)
         self.load_model(checkpoint['state_dict'], hidden_dim=128)
 
     def load_model(self, state_dict, hidden_dim=128):
@@ -332,6 +353,9 @@ class EvalSimCLR(pl.LightningModule):
 
         con_state_dict = condition_state_dict(state_dict, self.convnet.state_dict())
         self.convnet.load_state_dict(con_state_dict)
+
+        self.convnet.fc = nn.Identity()     # Removing projection head g(.)
+
         self.convnet = self.convnet.cuda().eval()
 
     def predict(self, val_dl: DataLoader):
@@ -349,12 +373,21 @@ class EvalSimCLR(pl.LightningModule):
         val_embs = torch.cat(val_embs, axis=0)
         val_labels = torch.cat(val_labels, axis=0)
 
-        save_pca(val_embs, val_labels, 'first500.png')
+        save_emb(val_embs, val_labels, 'pca_first500.png')
 
 
 def evaluate(cfg: CFG):
-    ckpt_path = 'lightning_logs/version_0/checkpoints/epoch=4-step=1950.ckpt'
-    module = EvalSimCLR(ckpt_path)
+    # ckpt_path = 'lightning_logs/version_0/checkpoints/epoch=4-step=1950.ckpt'
+    dim_red = 'pca'     # 'pca' or 'tsne
+    windows = True
+
+    if windows:
+        with set_posix_windows():
+            checkpoint = torch.load(Path(cfg.ckpt_path))
+    else:
+        checkpoint = torch.load(Path(cfg.ckpt_path))
+
+    module = EvalSimCLR(checkpoint)
 
     transform = T.Compose([T.ToTensor(), T.Normalize((0.5,), (0.5,))])
     unlabeled_data, train_data_contrast = get_dataset(transform)
@@ -369,5 +402,5 @@ def evaluate(cfg: CFG):
 
 
 if __name__=='__main__':
-    main(CFG)
-    # evaluate(CFG)
+    # main(CFG)
+    evaluate(CFG)
